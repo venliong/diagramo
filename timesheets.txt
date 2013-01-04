@@ -1,0 +1,15 @@
+hh:mm
+#1  2:10 28Nov
+#1  2:25 29Nov  
+#1  6:00 30Nov
+#1  2:00 4Dec
+#1  1:30 7Dec
+
+Pack 1: 14,5h
+
+
+Packages
+--------
+package 1: Tasks: 1 (10days)
+package 2:  Tasks: 2, 3, 4, 6
+package 3:  tasks: 5,7, 8
