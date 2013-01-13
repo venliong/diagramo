@@ -33,7 +33,7 @@ $page = 'editor';
     <head>
         <title>HTML5 diagram editor</title>
         <meta charset="UTF-8">
-        <meta http-equiv="X-UA-Compatible" content="IE=9" />
+        <meta http-equiv="X-UA-Compatible" content="IE=9" />             
         <script type="text/javascript" src="./assets/javascript/dropdownmenu.js?<?=time()?>"></script>    
         
         <link rel="stylesheet" media="screen" type="text/css" href="./assets/css/style.css" />
@@ -354,6 +354,122 @@ $page = 'editor';
                 // close layer when click-out
                 
                 addListeners();
+                
+                window.addEventListener("mousedown", documentOnMouseDown, false);
+                window.addEventListener("mousemove", documentOnMouseMove, false);
+                window.addEventListener("mouseup", documentOnMouseUp, false);
+            }     
+            
+            
+            function documentOnMouseDown(evt){
+                //Log.info("documentOnMouseDown");
+                //evt.preventDefault();
+            }
+            
+            var draggingFigure = null;
+            function documentOnMouseMove(evt){
+                //Log.info("documentOnMouseMove");
+                
+                switch(state){
+                    case STATE_FIGURE_CREATE:
+                        //Log.info("documentOnMouseMove: trying to draw the D'n'D figure");
+                        
+                        if(!draggingFigure){
+                            draggingFigure = document.createElement('img');
+                            draggingFigure.setAttribute('id', 'draggingThumb');
+                            draggingFigure.style.position = 'absolute';
+                            body.appendChild(draggingFigure);
+                        }
+                        
+                        
+                        //Log.info("editor.php>documentOnMouseMove>STATE_FIGURE_CREATE: selectedFigureThumb=" + selectedFigureThumb);
+                        draggingFigure.setAttribute('src', selectedFigureThumb);                        
+                        draggingFigure.style.width = '100px';
+                        draggingFigure.style.height = '100px';
+                        draggingFigure.style.left = (evt.pageX - 50) + 'px';
+                        draggingFigure.style.top = (evt.pageY - 50) + 'px';
+                        //draggingFigure.style.backgroundColor  = 'red';
+                        draggingFigure.style.display  = 'block';
+
+                        draggingFigure.addEventListener('mousedown', function (event){
+                            //Log.info("documentOnMouseMove: How stupid. Mouse down on dragging figure");
+                        }, false);
+                        
+                        draggingFigure.addEventListener('mouseup', function (ev){
+                            var coords = getCanvasXY(ev);
+                            
+                            if(coords == null){
+                                return;
+                            }
+                            
+                            x = coords[0];
+                            y = coords[1];
+                            switch(state){                                
+                                case STATE_FIGURE_CREATE:
+                                    Log.info("draggingFigure>onMouseUp() + STATE_FIGURE_CREATE");
+
+                                    snapMonitor = [0,0];
+
+                                    //treat new figure
+                                    //do we need to create a figure on the canvas?
+                                    if(window.createFigureFunction){
+                                        //Log.info("draggingFigure>onMouseUp() + STATE_FIGURE_CREATE--> new state STATE_FIGURE_SELECTED + createFigureFunction = " + window.createFigureFunction);
+
+                                        var cmdCreateFig = new FigureCreateCommand(window.createFigureFunction, x, y);
+                                        cmdCreateFig.execute();
+                                        History.addUndo(cmdCreateFig);
+
+                                        //HTMLCanvas.style.cursor = 'default';
+
+                                        selectedConnectorId = -1;
+                                        createFigureFunction = null;
+                                        mousePressed = false;
+                                        redraw = true;
+                                        
+                                        draw();
+                                        
+                                        //TODO: a way around to hide this dragging DIV
+                                        document.getElementById('draggingThumb').style.display  = 'none';
+                                        
+                                        //TODO: the horror 
+                                        //body.removeChild(document.getElementById('draggingThumb'));
+                                        
+                                    }
+                                    else{
+                                        Log.info("draggingFigure>onMouseUp() + STATE_FIGURE_CREATE--> but no 'createFigureFunction'");
+                                    }
+                                    break;
+                            }
+                            
+                            //stop canvas from gettting this event
+                            evt.stopPropagation();
+                        }, false);
+                        break;
+                        
+                    case STATE_NONE:
+                        //document.removeChild(document.getElementById('draggingThumb'));
+                        break;
+                }
+            }
+            
+            
+            function documentOnMouseUp(evt){
+                Log.info("documentOnMouseUp");
+                
+                switch(state){
+                    case STATE_FIGURE_CREATE:
+                        var eClicked = document.elementFromPoint(evt.clientX, evt.clientY);
+                        if(eClicked.id != 'a'){
+                            if(draggingFigure){
+                                //draggingFigure.style.display  = 'none';
+                                draggingFigure.parentNode.removeChild(draggingFigure);
+                                state = STATE_NONE;
+                                draggingFigure = null;
+                                //evt.stopPropagation();
+                            }
+                        }
+                        break;
+                }
             }
             
             
@@ -371,7 +487,7 @@ $page = 'editor';
                 canvas.addEventListener("mousemove", onMouseMove, false);
                 canvas.addEventListener("mousedown", onMouseDown, false);
                 canvas.addEventListener("mouseup", onMouseUp, false);
-                          
+                canvas.addEventListener("dblclick", onDoubleClick, false);
              
                 if(false){
                     //add listeners for iPad/iPhone
@@ -481,32 +597,112 @@ $page = 'editor';
                             document.write('<option value="' + setName + '">' + set['name'] + '</option>');
                         }
                     </script>
-
                 </select>
+                
                 <script>
-                    var first = true;
-                    for(var setName in figureSets){
-                        document.write('<div id="' + setName + '" ' + (!first ? 'style="display: none"' : '')+'>');
-                        document.write('<table border="0" cellpadding="0" cellspacing="0" width="120">');
-                        var counter = 0;
-                        var set = figureSets[setName];
-                        for(var figure in set['figures']){
-                            figure = set['figures'][figure];
-                            if(counter % 3 == 0){
-                                document.write('<tr>');
+                    /**Builds the figure panel*/
+                    function buildPanel(){
+                        //var first = true;
+                        var firstPanel = true;
+                        for(var setName in figureSets){                            
+                            var set = figureSets[setName];
+                            
+                            //creates the div that will hold the figures
+                            var eSetDiv = document.createElement('div');
+                            eSetDiv.setAttribute('id', setName);
+                            //eSetDiv.style.border = '1px solid green';
+                            if(firstPanel) {
+                                firstPanel = false;
                             }
-                            document.write('<td align="center"><a href="javascript:createFigure(figure_'+figure.figureFunction+');"><img src="lib/sets/'+setName+'/'+figure.image+'" border="0" alt="'+ figure.figureFunction + '" /></a></td>');
-                            counter ++;
-                            if(counter % 3 == 0){
-                                document.write('</tr>');
+                            else{
+                                eSetDiv.style.display = 'none';
+                            }
+                            document.getElementById('figures').appendChild(eSetDiv);
+                            
+                            //add figures to the div
+                            for(var figure in set['figures']){
+                                figure = set['figures'][figure];
+                                
+                                var figureFunctionName = 'figure_' + figure.figureFunction;                                
+                                var figureThumbURL = 'lib/sets/' + setName + '/' + figure.image;
+                                
+                                var eFigure = document.createElement('img');
+                                eFigure.setAttribute('src', figureThumbURL);
+                                
+                                eFigure.addEventListener('mousedown', function (figureFunction, figureThumbURL){                                    
+                                    return function(evt) {
+                                        evt.preventDefault();
+                                        //Log.info("editor.php:buildPanel: figureFunctionName:" + figureFunctionName);
+                                        
+                                        createFigure(window[figureFunction] /*we need to search for function in window namespace (as all that we have is a simple string)**/
+                                            ,figureThumbURL);
+                                    };
+                                } (figureFunctionName, figureThumbURL)
+                                , false);
+
+                                //in case use drops the figure
+                                eFigure.addEventListener('mouseup', function (){
+                                    createFigureFunction = null;    
+                                    selectedFigureThumb = null;
+                                    state = STATE_NONE;
+                                }
+                                , false);                                                                                                
+                                
+                                
+                                eFigure.style.cursor = 'pointer';
+                                eFigure.style.marginRight = '5px';
+                                eFigure.style.marginTop = '2px';
+                                
+                                eSetDiv.appendChild(eFigure);
                             }
                         }
-                        if(counter % 3 != 0){
-                            document.write('</tr>');
-                        }
-                        document.write('</table></div>');
-                        first = false;
                     }
+                    
+                    buildPanel();
+                    
+//                    var first = true;
+//                    for(var setName in figureSets){
+//                        
+//                        document.write('<div id="' + setName + '" ' + (!first ? 'style="display: none"' : '')+'>');
+//                        document.write('<table border="0" cellpadding="0" cellspacing="0" width="120">');
+//                        var counter = 0;
+//                        var set = figureSets[setName];
+//                        for(var figure in set['figures']){
+//                            figure = set['figures'][figure];
+//                            if(counter % 3 == 0){
+//                                document.write('<tr>');
+//                            }
+//                            
+//                            var figureFunctionName = 'figure_' + figure.figureFunction;
+//                            var figureThumbURL = 'lib/sets/' + setName + '/' + figure.image;
+//                            
+//                            document.write('<td align="center">');
+//                            document.write('<a href="javascript:createFigure(' + figureFunctionName + "," + "'" + figureThumbURL + "'" + ');">');
+//                            
+//                            //TODO: how to prevent default behaviour?
+//                            var figureImageId = 'fig' + setName + '_' + figure.figureFunction;
+//                            document.write('<img id="' + figureImageId +'" onmousedown="javascript:createFigure(' + figureFunctionName + "," + "'" + figureThumbURL + "'" + ');" src="' + figureThumbURL + '" border="0" alt="'+ figure.figureFunction + '" />');
+//                            
+//                            var figureImageElem = document.getElementById(figureImageId);
+//                            figureImageId.onMouseDown = function(evt){
+//                                alert('I am here');
+//                                evt.preventDefault();
+//                            }
+//                            
+//                            //document.write('</a>');
+//                            document.write('</td>');
+//                            
+//                            counter ++;
+//                            if(counter % 3 == 0){
+//                                document.write('</tr>');
+//                            }
+//                        }
+//                        if(counter % 3 != 0){
+//                            document.write('</tr>');
+//                        }
+//                        document.write('</table></div>');
+//                        first = false;
+//                    }
                 </script>
                 
                 <div style="display:none;" id="more">
