@@ -167,6 +167,9 @@ var defaultLineWidth = 2;
 /**Current selected figure id ( -1 if none selected)*/
 var selectedFigureId = -1;
 
+/**Currently selected figure thumbnail (for D&D)*/
+var selectedFigureThumb = null
+
 /**Current selected group (-1 if none selected)*/
 var selectedGroupId = -1;
 
@@ -359,10 +362,15 @@ function setUpEditPanel(shape){
 /**Setup the creation function (that -later, upon calling - will create the actual {Figure}
  * Note: It will also set the current state to STATE_FIGURE_CREATE
  * @param  {Function} fFunction - the function used to create the figure
+ * @param  {String} thumbURL - the URL to the thumb of the image
  **/
-function createFigure(fFunction){
-    //alert("createFigure() - You ask me to create a figure? How dare you?");
+function createFigure(fFunction, thumbURL){
+    //Log.info('createFigure (' + fFunction + ',' + thumbURL + ')');
+    
     createFigureFunction = fFunction;
+    
+    selectedFigureThumb = thumbURL;
+    
 
     selectedFigureId = -1;
     selectedConnectorId = -1;
@@ -430,6 +438,21 @@ function onClick(ev){
         STACK.figureRemove(fig);
     }*/
 //draw();
+}
+
+
+
+function onDoubleClick(ev){
+    var coords = getCanvasXY(ev);
+    var HTMLCanvas = getCanvas();
+    var x = coords[0];
+    var y = coords[1];
+    lastClick = [x,y];
+//    Log.info("onMouseDown at (" + x + "," + y + ")");
+    //alert('lastClick: ' + lastClick + ' state: ' + state);
+
+    //mousePressed = true;
+    alert("Double click triggered");
 }
 
 
@@ -785,25 +808,12 @@ function onMouseDown(ev){
 
 
         case STATE_FIGURE_CREATE:
-            snapMonitor = [0,0];
-            
-            //treat new figure
-            //do we need to create a figure on the canvas?
-            if(createFigureFunction){
-                Log.info("onMouseDown() + STATE_FIGURE_CREATE--> new state STATE_FIGURE_SELECTED");
-                
-                var cmdCreateFig = new FigureCreateCommand(createFigureFunction, x, y);
-                cmdCreateFig.execute();
-                History.addUndo(cmdCreateFig);
-                
-                HTMLCanvas.style.cursor = 'default';
-
-                selectedConnectorId = -1;
-                createFigureFunction = null;
-
-                mousePressed = false;
-                redraw = true;
-            }
+//            selectedConnectorId = -1;
+//            createFigureFunction = null;
+//
+//            mousePressed = false;
+//            redraw = true;
+            throw "canvas> onMouseDown> STATE_FIGURE_CREATE> : this should not happen";  
             break;
 
 
@@ -1178,6 +1188,8 @@ function onMouseDown(ev){
  *@param {Event} ev - the event generated when key is up
  **/
 function onMouseUp(ev){
+    Log.info("main.js>onMouseUp()");
+    
     var coords = getCanvasXY(ev);
     x = coords[0];
     y = coords[1];
@@ -1196,7 +1208,36 @@ function onMouseUp(ev){
                 HandleManager.clear();
             }
             break;
+        
+        /* treated on the dragging figure
+        case STATE_FIGURE_CREATE:
+            Log.info("onMouseUp() + STATE_FIGURE_CREATE");
+            
+            snapMonitor = [0,0];
+            
+            //treat new figure
+            //do we need to create a figure on the canvas?
+            if(createFigureFunction){
+                Log.info("onMouseUp() + STATE_FIGURE_CREATE--> new state STATE_FIGURE_SELECTED");
+                
+                var cmdCreateFig = new FigureCreateCommand(createFigureFunction, x, y);
+                cmdCreateFig.execute();
+                History.addUndo(cmdCreateFig);
+                
+                HTMLCanvas.style.cursor = 'default';
 
+                selectedConnectorId = -1;
+                createFigureFunction = null;
+
+                mousePressed = false;
+                redraw = true;
+            }
+            else{
+                Log.info("onMouseUp() + STATE_FIGURE_CREATE--> but no 'createFigureFunction'");
+            }
+            break;
+        */
+       
         case STATE_FIGURE_SELECTED:
             /*Description:
              * This means that we have a figure selected and just released the mouse:
