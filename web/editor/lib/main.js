@@ -140,6 +140,9 @@ var STATE_SELECTING_MULTIPLE = 'selecting_multiple';
 /**we have a group selected (either temporary or permanent)*/
 var STATE_GROUP_SELECTED = 'group_selected';
 
+/**we have a container selected*/
+var STATE_CONTAINER_SELECTED = 'container_selected';
+
 /**Keeps current state*/
 var state = STATE_NONE;
 
@@ -167,11 +170,17 @@ var defaultLineWidth = 2;
 /**Current selected figure id ( -1 if none selected)*/
 var selectedFigureId = -1;
 
+/**Currently selected figure thumbnail (for D&D)*/
+var selectedFigureThumb = null
+
 /**Current selected group (-1 if none selected)*/
 var selectedGroupId = -1;
 
 /**Current selecte connector (-1 if none selected)*/
 var selectedConnectorId = -1;
+
+/**Current selectet container (-1 if none selected)*/
+var selectedContainerId = -1;
 
 /**Currently selected ConnectionPoint (if -1 none is selected)*/
 var selectedConnectionPointId = -1;
@@ -250,6 +259,12 @@ function updateShape(shapeId, property, newValue){
     //TODO: this horror must dissapear
     if(!obj){
         obj = CONNECTOR_MANAGER.connectorGetById(shapeId);
+    }
+    
+    
+    //container?
+    if(!obj){
+        obj = STACK.containerGetById(shapeId);
     }
 
     var objSave = obj; //keep a reference to initial shape
@@ -346,6 +361,9 @@ function setUpEditPanel(shape){
             case 'Group':
                 //do nothing. We do not want to offer this to groups
                 break;
+            case 'Container':
+                Builder.contructPropertiesPanel(propertiesPanel, shape);                
+                break;
             case 'CanvasProps':
                 Builder.constructCanvasPropertiesPanel(propertiesPanel, shape);
                 break;
@@ -359,10 +377,15 @@ function setUpEditPanel(shape){
 /**Setup the creation function (that -later, upon calling - will create the actual {Figure}
  * Note: It will also set the current state to STATE_FIGURE_CREATE
  * @param  {Function} fFunction - the function used to create the figure
+ * @param  {String} thumbURL - the URL to the thumb of the image
  **/
-function createFigure(fFunction){
-    //alert("createFigure() - You ask me to create a figure? How dare you?");
+function createFigure(fFunction, thumbURL){
+    //Log.info('createFigure (' + fFunction + ',' + thumbURL + ')');
+    
     createFigureFunction = fFunction;
+    
+    selectedFigureThumb = thumbURL;
+    
 
     selectedFigureId = -1;
     selectedConnectorId = -1;
@@ -430,6 +453,21 @@ function onClick(ev){
         STACK.figureRemove(fig);
     }*/
 //draw();
+}
+
+
+
+function onDoubleClick(ev){
+    var coords = getCanvasXY(ev);
+    var HTMLCanvas = getCanvas();
+    var x = coords[0];
+    var y = coords[1];
+    lastClick = [x,y];
+//    Log.info("onMouseDown at (" + x + "," + y + ")");
+    //alert('lastClick: ' + lastClick + ' state: ' + state);
+
+    //mousePressed = true;
+    alert("Double click triggered");
 }
 
 
@@ -747,7 +785,7 @@ function onMouseDown(ev){
                 setUpEditPanel(con);
                 Log.info('onMouseDown() + STATE_NONE  - change to STATE_CONNECTOR_SELECTED');
                 redraw = true;
-            } else {                   
+            } else {                                
                 //find figure at (x,y)
                 var fId = STACK.figureGetByXY(x, y);
                 if(fId != -1){ //Selected a figure
@@ -770,14 +808,26 @@ function onMouseDown(ev){
 //                        }
                         Log.info('onMouseDown() + STATE_NONE + lonely figure => change to STATE_FIGURE_SELECTED');
                     }
-                    
+
                     redraw = true;
                 }
                 else{
-                    //DO NOTHING aka "Dolce far niente"
-                    //                    state = STATE_NONE;
-                    //                    setUpEditPanel(canvasProps);
-                    //                    Log.info('onMouseDown() + STATE_NONE  - no change');
+                    //find container's id
+                    var contId = STACK.containerGetByXY(x, y);
+                    throw "main.js->onMouseDown + STATE_NONE: We should detect clicks on edge no inside container";
+                    if(contId != -1){                    
+                        var container = STACK.containerGetById(contId);
+                        setUpEditPanel(container);
+                        state = STATE_CONTAINER_SELECTED;
+                        selectedContainerId = contId;
+                        Log.info('onMouseDown() + STATE_NONE  - change to STATE_CONTAINER_SELECTED');
+                    }
+                    else{
+                        //DO NOTHING aka "Dolce far niente"
+                        //                    state = STATE_NONE;
+                        //                    setUpEditPanel(canvasProps);
+                        //                    Log.info('onMouseDown() + STATE_NONE  - no change');
+                    }
                 }
             }
             
@@ -785,25 +835,12 @@ function onMouseDown(ev){
 
 
         case STATE_FIGURE_CREATE:
-            snapMonitor = [0,0];
-            
-            //treat new figure
-            //do we need to create a figure on the canvas?
-            if(createFigureFunction){
-                Log.info("onMouseDown() + STATE_FIGURE_CREATE--> new state STATE_FIGURE_SELECTED");
-                
-                var cmdCreateFig = new FigureCreateCommand(createFigureFunction, x, y);
-                cmdCreateFig.execute();
-                History.addUndo(cmdCreateFig);
-                
-                HTMLCanvas.style.cursor = 'default';
-
-                selectedConnectorId = -1;
-                createFigureFunction = null;
-
-                mousePressed = false;
-                redraw = true;
-            }
+//            selectedConnectorId = -1;
+//            createFigureFunction = null;
+//
+//            mousePressed = false;
+//            redraw = true;
+            throw "canvas> onMouseDown> STATE_FIGURE_CREATE> : this should not happen";  
             break;
 
 
@@ -857,11 +894,22 @@ function onMouseDown(ev){
                     if(fId == -1){ //Clicked outside of anything
                         if (!SHIFT_PRESSED){ //if Shift isn`t pressed
                             selectedFigureId = -1;
-                            state = STATE_NONE;
                             
-                            setUpEditPanel(canvasProps);
+                            //find container's id
+                            var contId = STACK.containerGetByXY(x, y);
+                            if(contId != -1){                    
+                                var container = STACK.containerGetById(contId);
+                                setUpEditPanel(container);
+                                state = STATE_CONTAINER_SELECTED;
+                                selectedContainerId = contId;
+                                Log.info('onMouseDown() + STATE_FIGURE_SELECTED  - change to STATE_CONTAINER_SELECTED');
+                            }
+                            else{
+                                state = STATE_NONE;
+                                setUpEditPanel(canvasProps);
+                                Log.info('onMouseDown() + STATE_FIGURE_SELECTED  - change to STATE_NONE');
+                            }
                             redraw = true;
-                            Log.info('onMouseDown() + STATE_FIGURE_SELECTED  - change to STATE_NONE');
                         }
                     }
                     else{ //We are sure we clicked a figure
@@ -1161,6 +1209,65 @@ function onMouseDown(ev){
                 }                                                    
             }                        
             break; //end case STATE_CONNECTOR_SELECTED 
+            
+            
+            
+        case STATE_CONTAINER_SELECTED:
+            //find Connector at (x,y)
+            var cId = CONNECTOR_MANAGER.connectorGetByXY(x, y);
+            if(cId != -1){ //Clicked a Connector
+                selectedConnectorId = cId;
+                state = STATE_CONNECTOR_SELECTED;
+                var con = CONNECTOR_MANAGER.connectorGetById(selectedConnectorId);
+                setUpEditPanel(con);
+                Log.info('onMouseDown() + STATE_CONTAINER_SELECTED  - change to STATE_CONNECTOR_SELECTED');
+                redraw = true;
+            } else {                                
+                //find figure at (x,y)
+                var fId = STACK.figureGetByXY(x, y);
+                if(fId != -1){ //Selected a figure
+                    if(STACK.figureGetById(fId).groupId != -1){ //if the figure belongs to a group then select that group
+                        selectedGroupId = STACK.figureGetById(fId).groupId;
+                        var grp = STACK.groupGetById(selectedGroupId);
+                        state = STATE_GROUP_SELECTED;
+//                        if(doUndo){
+//                            currentMoveUndo = new MatrixCommand(selectedGroupId, History.OBJECT_GROUP, History.MATRIX, Matrix.translationMatrix(grp.getBounds()[0],grp.getBounds()[1]), null);
+//                        }
+                        Log.info('onMouseDown() + STATE_CONTAINER_SELECTED + group selected  =>  change to STATE_GROUP_SELECTED');
+                    }
+                    else{ //ok, we will select lonely figure
+                        selectedFigureId = fId;
+                        var f = STACK.figureGetById(fId);
+                        setUpEditPanel(f);
+                        state = STATE_FIGURE_SELECTED;
+//                        if(doUndo){
+//                            currentMoveUndo = new MatrixCommand(fId, History.OBJECT_FIGURE, History.MATRIX, Matrix.translationMatrix(f.getBounds()[0],f.getBounds()[1]), null);
+//                        }
+                        Log.info('onMouseDown() + STATE_CONTAINER_SELECTED + lonely figure => change to STATE_FIGURE_SELECTED');
+                    }
+
+                    redraw = true;
+                }
+                else{
+                    //find container's id
+                    var contId = STACK.containerGetByXY(x, y);
+                    if(contId != -1 && contId != selectedContainerId){                    
+                        var container = STACK.containerGetById(contId);
+                        setUpEditPanel(container);
+                        state = STATE_CONTAINER_SELECTED;
+                        selectedContainerId = contId;
+                        Log.info('onMouseDown() + STATE_NONE  - change to STATE_CONTAINER_SELECTED');
+                    }
+                    else{
+                        //DO NOTHING aka "Dolce far niente"
+                        state = STATE_NONE;
+                        selectedContainerId = -1;
+                        setUpEditPanel(canvasProps);
+                        Log.info('onMouseDown() + STATE_NONE  - no change');
+                    }
+                }
+            }    
+            break; //end STATE_CONTAINER_SELECTED
 
             
         default:
@@ -1178,6 +1285,8 @@ function onMouseDown(ev){
  *@param {Event} ev - the event generated when key is up
  **/
 function onMouseUp(ev){
+    Log.info("main.js>onMouseUp()");
+    
     var coords = getCanvasXY(ev);
     var x = coords[0];
     var y = coords[1];
@@ -1196,7 +1305,36 @@ function onMouseUp(ev){
                 HandleManager.clear();
             }
             break;
+        
+        /* treated on the dragging figure
+        case STATE_FIGURE_CREATE:
+            Log.info("onMouseUp() + STATE_FIGURE_CREATE");
+            
+            snapMonitor = [0,0];
+            
+            //treat new figure
+            //do we need to create a figure on the canvas?
+            if(createFigureFunction){
+                Log.info("onMouseUp() + STATE_FIGURE_CREATE--> new state STATE_FIGURE_SELECTED");
+                
+                var cmdCreateFig = new FigureCreateCommand(createFigureFunction, x, y);
+                cmdCreateFig.execute();
+                History.addUndo(cmdCreateFig);
+                
+                HTMLCanvas.style.cursor = 'default';
 
+                selectedConnectorId = -1;
+                createFigureFunction = null;
+
+                mousePressed = false;
+                redraw = true;
+            }
+            else{
+                Log.info("onMouseUp() + STATE_FIGURE_CREATE--> but no 'createFigureFunction'");
+            }
+            break;
+        */
+       
         case STATE_FIGURE_SELECTED:
             /*Description:
              * This means that we have a figure selected and just released the mouse:
@@ -1424,6 +1562,10 @@ function onMouseMove(ev){
                     canvas.style.cursor = 'move';
                     Log.debug('onMouseMove() - STATE_NONE - mouse cursor = move (over connector)');
                 }
+                else if(STACK.containerIsOnEdge(x,y)){
+                    canvas.style.cursor = 'move';
+                    Log.debug("onMouseMove() - STATE_NONE - mouse cursor = move (over container's edge)");
+                }
                 else{ //default cursor
                     canvas.style.cursor = 'default';
                     Log.debug('onMouseMove() - STATE_NONE - mouse cursor = default');
@@ -1527,6 +1669,72 @@ function onMouseMove(ev){
             }
             
             break;
+            
+            
+       case STATE_CONTAINER_SELECTED:
+           //throw "main.js onMouseMove() + STATE_CONTAINER_SELECTED:  Not implemented";           
+           
+           //BRUTE COPY FROM FIGURE
+           if(mousePressed){ // mouse is (at least was) pressed
+                if(lastMove != null){ //we are in dragging mode
+                    /*We need to use handleGetSelected() as if we are using handleGet(x,y) then 
+                     *as we move the mouse....it can move faster/slower than the figure and we 
+                     *will lose the Handle selection.
+                     **/
+                    var handle = HandleManager.handleGetSelected();
+                    
+                    if(handle != null){ //We are over a Handle of selected Container               
+                        canvas.style.cursor = handle.getCursor();
+                        handle.action(lastMove,x,y);
+                        redraw = true;
+                        Log.info('onMouseMove() - STATE_CONTAINER_SELECTED + drag - mouse cursor = ' + canvas.style.cursor);
+                    }
+                    else{ /*no handle is selected*/
+//                        if (!SHIFT_PRESSED){//just translate the figure                            
+                            canvas.style.cursor = 'move';
+                            var translateMatrix = generateMoveMatrix(STACK.containerGetById(selectedContainerId), x, y);
+                            Log.info("onMouseMove() + STATE_CONTAINER_SELECTED : translation matrix" + translateMatrix);
+                            var cmdTranslateContainer = new ContainerTranslateCommand(selectedContainerId, translateMatrix);
+                            History.addUndo(cmdTranslateContainer);
+                            cmdTranslateContainer.execute();
+                            redraw = true;
+                            Log.info("onMouseMove() + STATE_CONTAINER_SELECTED + drag - move selected container");
+//                        }else{ //we are entering a figures selection sesssion
+//                            state = STATE_SELECTING_MULTIPLE;
+//                            selectionArea.points[0] = new Point(x,y);
+//                            selectionArea.points[1] = new Point(x,y);
+//                            selectionArea.points[2] = new Point(x,y);
+//                            selectionArea.points[3] = new Point(x,y);//the selectionArea has no size until we start dragging the mouse
+//                            redraw = true;
+//                            Log.info('onMouseMove() - STATE_CONTAINER_SELECTED + mousePressed + SHIFT => STATE_SELECTING_MULTIPLE');
+//                        }
+                    }
+                }
+            }
+            else{ //no mouse press (only change cursor)
+                var handle = HandleManager.handleGet(x,y); //TODO: we should be able to replace it with .getSelectedHandle()
+                    
+                if(handle != null){ //We are over a Handle of selected Figure               
+                    canvas.style.cursor = handle.getCursor();
+                    Log.info('onMouseMove() - STATE_CONTAINER_SELECTED + over a Handler = change cursor to: ' + canvas.style.cursor);
+                }
+                else{
+//                    throw "main.js onMouseMove() + STATE_CONTAINER_SELECTED:  Not implemented";
+                    
+                    /*move figure only if no handle is selected*/
+                    if(STACK.containerIsOnEdge(x, y)){//pick first container from (x, y)
+                        canvas.style.cursor = 'move';                            
+                        Log.info("onMouseMove() + STATE_CONTAINER_SELECTED + over a container's edge = change cursor");
+                    }
+                    else{
+                        canvas.style.cursor = 'default';                            
+                        Log.info("onMouseMove() + STATE_CONTAINER_SELECTED + over nothing = change cursor to default");
+                    }
+                }
+            }
+            //END BRUTE COPY FROM FIGURE
+            
+           break;
 
 
         case STATE_GROUP_SELECTED:
@@ -2186,7 +2394,7 @@ function getCanvasXY(ev){
     var position = null;
     var canvasBounds = getCanvasBounds();
 //    Log.group("main.js->getCanvasXY()");
-    Log.info("Canvas bounds: [" + canvasBounds + ']');
+    Log.debug("Canvas bounds: [" + canvasBounds + ']');
     
     var tempPageX = null;
     var tempPageY = null;
@@ -2200,7 +2408,7 @@ function getCanvasXY(ev){
     else{ //normal Desktop
         tempPageX = ev.pageX; //Retrieves the x-coordinate of the mouse pointer relative to the top-left corner of the document.
         tempPageY = ev.pageY; //Retrieves the y-coordinate of the mouse pointer relative to the top-left corner of the document.          
-        Log.info("ev.pageX:" + ev.pageX + " ev.pageY:" + ev.pageY);
+        Log.debug("ev.pageX:" + ev.pageX + " ev.pageY:" + ev.pageY);
     }
     
     if(canvasBounds[0] <= tempPageX && tempPageX <= canvasBounds[2]
@@ -2342,6 +2550,18 @@ function action(action){
                 
             }
             redraw = true;
+            break;
+            
+        case 'container':
+            Log.info("main.js->action()->container. Nr of actions in the STACK: " + History.COMMANDS.length);
+            
+            //creates a container
+            var cmdContainerCreate = new ContainerCreateCommand(300, 300);
+            cmdContainerCreate.execute();
+            History.addUndo(cmdContainerCreate);
+            
+            redraw = true;
+            
             break;
         
         case 'ungroup':
