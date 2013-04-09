@@ -21,7 +21,15 @@ var doUndo = true;
 var currentMoveUndo = null; 
 
 var CONNECTOR_MANAGER = new ConnectorManager();
+var CONTAINER_MANAGER = new ContainerFigureManager();
 
+/**An currentCloud - {Array} of 2 {ConnectionPoint} ids.
+ * Cloud highlights 2 {ConnectionPoint}s whose are able to connect. */
+var currentCloud = [];
+
+// disables rendering of currentCloud
+// TODO: remove it after further details will be decided
+var visualMagnet = false;
 
 /**The width of grid cell. 
  *Must be an odd number.
@@ -36,6 +44,9 @@ var fillColor=null;
 var strokeColor='#000000';
 var currentText=null;
 var FIGURE_ESCAPE_DISTANCE = 30; /**the distance by which the connectors will escape Figure's bounds*/
+
+/**the distance by which the connectors will be able to connect with Figure*/
+var FIGURE_CLOUD_DISTANCE = 4;
 
 /*It will store a reference to the function that will create a figure( ex: figureForKids:buildFigure3()) will be stored into this
  *variable so upon click on canvas this function will create the object*/
@@ -565,6 +576,16 @@ function onKeyDown(ev){
                         History.addUndo(cmdDelCon);                                                
                     }
                     Log.groupEnd();
+                    break;
+                    
+                case STATE_CONTAINER_SELECTED:
+                    Log.group("Delete container");
+                    if(selectedContainerId != -1){
+                        var cmdDelContainer = new ContainerDeleteCommand(selectedContainerId);
+                        cmdDelContainer.execute();
+                        History.addUndo(cmdDelContainer);                                                
+                    }
+                    Log.groupEnd();
                     break;                                    
             }
             break;
@@ -819,7 +840,7 @@ function onMouseDown(ev){
                 }
                 else{
                     //find container's id
-                    var contId = STACK.containerGetByXY(x, y);
+                    var contId = STACK.containerGetByXYOnEdge(x, y);
 //                    throw "main.js->onMouseDown + STATE_NONE: We should detect clicks on edge no inside container";
                     if(contId != -1){                    
                         var container = STACK.containerGetById(contId);
@@ -829,10 +850,7 @@ function onMouseDown(ev){
                         Log.info('onMouseDown() + STATE_NONE  - change to STATE_CONTAINER_SELECTED');
                     }
                     else{
-                        //DO NOTHING aka "Dolce far niente"
-                        //                    state = STATE_NONE;
-                        //                    setUpEditPanel(canvasProps);
-                        //                    Log.info('onMouseDown() + STATE_NONE  - no change');
+                        //DO NOTHING 
                     }
                 }
             }
@@ -1160,7 +1178,9 @@ function onMouseDown(ev){
             var cps = CONNECTOR_MANAGER.connectionPointGetAllByParent(selectedConnectorId);
             var start = cps[0];
             var end = cps[1];
-            
+            var figureConnectionPointId;
+            var figureConnectionPoint;
+
             //did we click any of the connection points?
             if(start.point.near(x, y, 3)){
                 Log.info("Picked the start point");
@@ -1171,6 +1191,13 @@ function onMouseDown(ev){
                 //this acts like clone of the connector
                 var undoCmd = new ConnectorAlterCommand(selectedConnectorId); 
                 History.addUndo(undoCmd);
+
+                // check if current cloud for connection point
+                figureConnectionPointId = CONNECTOR_MANAGER.connectionPointGetByXYRadius(x,y, FIGURE_CLOUD_DISTANCE, ConnectionPoint.TYPE_FIGURE, end);
+                if (figureConnectionPointId !== -1) {
+                    figureConnectionPoint = CONNECTOR_MANAGER.connectionPointGetById(figureConnectionPointId);
+                    currentCloud = [selectedConnectionPointId, figureConnectionPointId];
+                }
             }
             else if(end.point.near(x, y, 3)){
                 Log.info("Picked the end point");
@@ -1181,6 +1208,13 @@ function onMouseDown(ev){
                 //this acts like clone of the connector
                 var undoCmd = new ConnectorAlterCommand(selectedConnectorId); 
                 History.addUndo(undoCmd);
+
+                // check if current cloud for connection point
+                figureConnectionPointId = CONNECTOR_MANAGER.connectionPointGetByXYRadius(x,y, FIGURE_CLOUD_DISTANCE, ConnectionPoint.TYPE_FIGURE, start);
+                if (figureConnectionPointId !== -1) {
+                    figureConnectionPoint = CONNECTOR_MANAGER.connectionPointGetById(figureConnectionPointId);
+                    currentCloud = [selectedConnectionPointId, figureConnectionPointId];
+                }
             }
             else{ //no connection point selected
                 
@@ -1219,75 +1253,80 @@ function onMouseDown(ev){
             
             
         case STATE_CONTAINER_SELECTED:
-            //find Connector at (x,y)
-            var cId = CONNECTOR_MANAGER.connectorGetByXY(x, y);
-            if(cId != -1){ //Clicked a Connector
-                selectedConnectorId = cId;
-                state = STATE_CONNECTOR_SELECTED;
-                var con = CONNECTOR_MANAGER.connectorGetById(selectedConnectorId);
-                setUpEditPanel(con);
-                Log.info('onMouseDown() + STATE_CONTAINER_SELECTED  - change to STATE_CONNECTOR_SELECTED');
-                redraw = true;
-            } else {                                
-                //find figure at (x,y)
-                var fId = STACK.figureGetByXY(x, y);
-                if(fId != -1){ //Selected a figure
-                    if(STACK.figureGetById(fId).groupId != -1){ //if the figure belongs to a group then select that group
-                        selectedGroupId = STACK.figureGetById(fId).groupId;
-                        var grp = STACK.groupGetById(selectedGroupId);
-                        state = STATE_GROUP_SELECTED;
-//                        if(doUndo){
-//                            currentMoveUndo = new MatrixCommand(selectedGroupId, History.OBJECT_GROUP, History.MATRIX, Matrix.translationMatrix(grp.getBounds()[0],grp.getBounds()[1]), null);
-//                        }
-                        Log.info('onMouseDown() + STATE_CONTAINER_SELECTED + group selected  =>  change to STATE_GROUP_SELECTED');
-                    }
-                    else{ //ok, we will select lonely figure
-                        selectedFigureId = fId;
-                        var f = STACK.figureGetById(fId);
-                        setUpEditPanel(f);
-                        state = STATE_FIGURE_SELECTED;
-//                        if(doUndo){
-//                            currentMoveUndo = new MatrixCommand(fId, History.OBJECT_FIGURE, History.MATRIX, Matrix.translationMatrix(f.getBounds()[0],f.getBounds()[1]), null);
-//                        }
-                        Log.info('onMouseDown() + STATE_CONTAINER_SELECTED + lonely figure => change to STATE_FIGURE_SELECTED');
-                    }
-
+            if(HandleManager.handleGet(x, y) != null){ //Clicked a handler (of a Figure or Connector)
+                Log.info("onMouseDown() + STATE_CONTAINER_SELECTED - handle selected");       
+                /*Nothing important (??) should happen here. We just clicked the handler of the figure*/
+                HandleManager.handleSelectXY(x, y);
+            }
+            else{
+                //find Connector at (x,y)
+                var cId = CONNECTOR_MANAGER.connectorGetByXY(x, y);
+                if(cId !== -1){ //Clicked a Connector
+                    selectedConnectorId = cId;
+                    state = STATE_CONNECTOR_SELECTED;
+                    var con = CONNECTOR_MANAGER.connectorGetById(selectedConnectorId);
+                    setUpEditPanel(con);
+                    Log.info('onMouseDown() + STATE_CONTAINER_SELECTED  - change to STATE_CONNECTOR_SELECTED');
                     redraw = true;
-                }
-                else{
-                    //find container's id
-                    var contId = STACK.containerGetByXY(x, y);
-                    if(contId != -1 && contId != selectedContainerId){                   
-                        var container = STACK.containerGetById(contId);
-                        setUpEditPanel(container);
-                        state = STATE_CONTAINER_SELECTED;
-                        selectedContainerId = contId;
-                        Log.info('onMouseDown() + STATE_NONE  - change to STATE_CONTAINER_SELECTED');
-                    }
-                    else{
-                        //DO NOTHING aka "Dolce far niente"
-
-                        
-                        //see if handler selected
-                        if(HandleManager.handleGet(x,y) != null){
-                            Log.info("onMouseDown() + STATE_CONTAINER_SELECTED - handle selected");
-                            HandleManager.handleSelectXY(x,y);
-
-//                            //TODO: just copy/paste code ....this acts like clone of the connector
-//                            var undoCmd = new ContainerAlterCommand(selectedContainerId); 
-//                            History.addUndo(undoCmd);
+                } else {                                
+                    //find figure at (x,y)
+                    var fId = STACK.figureGetByXY(x, y);
+                    if(fId != -1){ //Selected a figure
+                        if(STACK.figureGetById(fId).groupId != -1){ //if the figure belongs to a group then select that group
+                            selectedGroupId = STACK.figureGetById(fId).groupId;
+                            var grp = STACK.groupGetById(selectedGroupId);
+                            state = STATE_GROUP_SELECTED;
+    //                        if(doUndo){
+    //                            currentMoveUndo = new MatrixCommand(selectedGroupId, History.OBJECT_GROUP, History.MATRIX, Matrix.translationMatrix(grp.getBounds()[0],grp.getBounds()[1]), null);
+    //                        }
+                            Log.info('onMouseDown() + STATE_CONTAINER_SELECTED + group selected  =>  change to STATE_GROUP_SELECTED');
                         }
-                        else{
-                            //did we select another connector?
-                            //                        state = STATE_NONE;
-//                            selectedContainerId = -1;
-//                            setUpEditPanel(canvasProps);
-//                            Log.info('onMouseDown() + STATE_NONE  - no change');
+                        else{ //ok, we will select lonely figure
+                            selectedFigureId = fId;
+                            var f = STACK.figureGetById(fId);
+                            setUpEditPanel(f);
+                            state = STATE_FIGURE_SELECTED;
+    //                        if(doUndo){
+    //                            currentMoveUndo = new MatrixCommand(fId, History.OBJECT_FIGURE, History.MATRIX, Matrix.translationMatrix(f.getBounds()[0],f.getBounds()[1]), null);
+    //                        }
+                            Log.info('onMouseDown() + STATE_CONTAINER_SELECTED + lonely figure => change to STATE_FIGURE_SELECTED');
+                        }
 
-                        }  
+                        redraw = true;
                     }
-                }
-            }    
+                    else{ //no Connector, no Figure
+                        //find container's id
+                        var contId = STACK.containerGetByXY(x, y);
+                        if(contId == -1){ //no container detected, deselect current container
+                            setUpEditPanel(null);
+                            state = STATE_NONE;
+                            selectedContainerId = -1;
+                            HandleManager.clear();
+                            Log.info('onMouseDown() + STATE_CONTAINER_SELECTED + click on nothing - change to STATE_NONE');
+                        }
+                        else{ //we have a container
+                            if( contId != selectedContainerId){ //a different one
+                                var container = STACK.containerGetById(contId);
+                                setUpEditPanel(container);
+                                state = STATE_CONTAINER_SELECTED;
+                                selectedContainerId = contId;
+                                Log.info('onMouseDown() + STATE_NONE  - change to STATE_CONTAINER_SELECTED');
+                            }
+                            else{ //same container 
+//                                //see if handler selected
+//                                if(HandleManager.handleGet(x,y) != null){
+//                                    Log.info("onMouseDown() + STATE_CONTAINER_SELECTED - handle selected");
+//                                    HandleManager.handleSelectXY(x,y);
+//
+//        //                            //TODO: just copy/paste code ....this acts like clone of the connector
+//        //                            var undoCmd = new ContainerAlterCommand(selectedContainerId); 
+//        //                            History.addUndo(undoCmd);
+//                                }
+                            }
+                        }                    
+                    }
+                }    
+            }
             break; //end STATE_CONTAINER_SELECTED
 
             
@@ -1468,7 +1507,10 @@ function onMouseUp(ev){
             
             //reset all {ConnectionPoint}s' color
             CONNECTOR_MANAGER.connectionPointsResetColor();
-            
+
+            //reset current connection cloud
+            currentCloud = [];
+
             //select the current connector
             state = STATE_CONNECTOR_SELECTED;
             var con = CONNECTOR_MANAGER.connectorGetById(selectedConnectorId);
@@ -1486,7 +1528,10 @@ function onMouseUp(ev){
             
             //reset all {ConnectionPoint}s' color
             CONNECTOR_MANAGER.connectionPointsResetColor();
-            
+
+            //reset current connection cloud
+            currentCloud = [];
+
             state = STATE_CONNECTOR_SELECTED; //back to selected connector
             selectedConnectionPointId = -1; //but deselect the connection point
             redraw = true;
@@ -1654,6 +1699,11 @@ function onMouseMove(ev){
                             var cmdTranslateFigure = new FigureTranslateCommand(selectedFigureId, translateMatrix);
                             History.addUndo(cmdTranslateFigure);
                             cmdTranslateFigure.execute();
+                            
+                            //TODO: see if we ended in a container                            
+                            throw "main->onMouseMove->FigureSelected: see if we ended in a container";
+                            //Add your briliant code RIGHT here. :)
+                            
                             redraw = true;
                             Log.info("onMouseMove() + STATE_FIGURE_SELECTED + drag - move selected figure");
                         }else{ //we are entering a figures selection sesssion
@@ -1749,7 +1799,7 @@ function onMouseMove(ev){
                     }
                     else{
                         canvas.style.cursor = 'default';                            
-                        Log.info("onMouseMove() + STATE_CONTAINER_SELECTED + over nothing = change cursor to default");
+                        Log.debug("onMouseMove() + STATE_CONTAINER_SELECTED + over nothing = change cursor to default");
                     }
                 }
             }
@@ -2078,6 +2128,7 @@ function connectorPickSecond(x, y, ev){
     }
 
     
+    var firstConPoint = CONNECTOR_MANAGER.connectionPointGetFirstForConnector(selectedConnectorId);
     var secConPoint = CONNECTOR_MANAGER.connectionPointGetSecondForConnector(selectedConnectorId);
     //adjust connector
     Log.info("connectorPickSecond() -> Solution: " + debugSolutions[0][2]);
@@ -2085,20 +2136,26 @@ function connectorPickSecond(x, y, ev){
     con.turningPoints = Point.cloneArray(debugSolutions[0][2]);
     //CONNECTOR_MANAGER.connectionPointGetFirstForConnector(selectedConnectorId).point = con.turningPoints[0].clone();
     secConPoint.point = con.turningPoints[con.turningPoints.length-1].clone();
-        
-        
+
+    // before defining of {ConnectionPoint}'s position we reset currentCloud
+    currentCloud = [];
         
     //GLUES MANAGEMENT
     //remove all previous glues to {Connector}'s second {ConnectionPoint}
     CONNECTOR_MANAGER.glueRemoveAllBySecondId(secConPoint.id);
     
-    //recreate new glues if available
+    //recreate new glues and currentCloud if available
     var fCpId = CONNECTOR_MANAGER.connectionPointGetByXY(x, y, ConnectionPoint.TYPE_FIGURE); //find figure's CP
     if(fCpId != -1){ //we are over a figure's cp
         var fCp = CONNECTOR_MANAGER.connectionPointGetById(fCpId);        
         var g = CONNECTOR_MANAGER.glueCreate(fCp.id, CONNECTOR_MANAGER.connectionPointGetSecondForConnector(selectedConnectorId).id);
+    } else {
+        fCpId = CONNECTOR_MANAGER.connectionPointGetByXYRadius(x,y, FIGURE_CLOUD_DISTANCE, ConnectionPoint.TYPE_FIGURE, firstConPoint);
+        if(fCpId !== -1){
+            fCp = CONNECTOR_MANAGER.connectionPointGetById(fCpId);
+            currentCloud = [fCp.id, secConPoint.id];
+        }
     }
-    
     
     Log.groupEnd();
 }
@@ -2147,6 +2204,9 @@ function connectorMovePoint(connectionPointId, x, y, ev){
     var rStartFigure = null;
     var rEndPoint = con.turningPoints[con.turningPoints.length-1].clone();
     var rEndFigure = null;
+
+    // before solution we reset currentCloud
+    currentCloud = [];
     
     if(cps[0].id == connectionPointId){ //FIRST POINT
         var figCpId = CONNECTOR_MANAGER.connectionPointGetByXY(x, y, ConnectionPoint.TYPE_FIGURE); //find figure's CP at (x,y)
@@ -2174,6 +2234,7 @@ function connectorMovePoint(connectionPointId, x, y, ev){
 
         //UPDATE CONNECTOR 
         var firstConPoint = CONNECTOR_MANAGER.connectionPointGetFirstForConnector(selectedConnectorId);
+        var secondConPoint = CONNECTOR_MANAGER.connectionPointGetSecondForConnector(selectedConnectorId);
         //adjust connector
         Log.info("connectorMovePoint() -> Solution: " + debugSolutions[0][2]);
 
@@ -2187,14 +2248,18 @@ function connectorMovePoint(connectionPointId, x, y, ev){
         //remove all previous glues to {Connector}'s second {ConnectionPoint}
         CONNECTOR_MANAGER.glueRemoveAllBySecondId(firstConPoint.id);
 
-        //recreate new glues if available
+        //recreate new glues and currentCloud if available
         var fCpId = CONNECTOR_MANAGER.connectionPointGetByXY(x, y, ConnectionPoint.TYPE_FIGURE); //find figure's CP
         if(fCpId != -1){ //we are over a figure's cp
             var fCp = CONNECTOR_MANAGER.connectionPointGetById(fCpId);        
             var g = CONNECTOR_MANAGER.glueCreate(fCp.id, firstConPoint.id);
-        }            
-            
-        
+        } else {
+            fCpId = CONNECTOR_MANAGER.connectionPointGetByXYRadius(x,y, FIGURE_CLOUD_DISTANCE, ConnectionPoint.TYPE_FIGURE, secondConPoint);
+            if(fCpId !== -1){
+                fCp = CONNECTOR_MANAGER.connectionPointGetById(fCpId);
+                currentCloud = [fCp.id, firstConPoint.id];
+            }
+        }
     }     
     else if (cps[1].id == connectionPointId){ //SECOND POINT
         var figCpId = CONNECTOR_MANAGER.connectionPointGetByXY(x, y, ConnectionPoint.TYPE_FIGURE); //find figure's CP at (x,y)
@@ -2220,7 +2285,8 @@ function connectorMovePoint(connectionPointId, x, y, ev){
         debugSolutions = CONNECTOR_MANAGER.connector2Points(con.type, rStartPoint, rEndPoint, rStartBounds, rEndBounds);
 
 
-        //UPDATE CONNECTOR 
+        //UPDATE CONNECTOR
+        var firstConPoint = CONNECTOR_MANAGER.connectionPointGetFirstForConnector(selectedConnectorId);
         var secondConPoint = CONNECTOR_MANAGER.connectionPointGetSecondForConnector(selectedConnectorId);
         
         //adjust connector
@@ -2236,12 +2302,18 @@ function connectorMovePoint(connectionPointId, x, y, ev){
         //remove all previous glues to {Connector}'s second {ConnectionPoint}
         CONNECTOR_MANAGER.glueRemoveAllBySecondId(secondConPoint.id);
 
-        //recreate new glues if available
+        //recreate new glues and currentCloud if available
         var fCpId = CONNECTOR_MANAGER.connectionPointGetByXY(x, y, ConnectionPoint.TYPE_FIGURE); //find figure's CP
         if(fCpId != -1){ //we are over a figure's cp
             var fCp = CONNECTOR_MANAGER.connectionPointGetById(fCpId);        
             var g = CONNECTOR_MANAGER.glueCreate(fCp.id, secondConPoint.id);
-        } 
+        } else {
+            fCpId = CONNECTOR_MANAGER.connectionPointGetByXYRadius(x,y, FIGURE_CLOUD_DISTANCE, ConnectionPoint.TYPE_FIGURE, firstConPoint);
+            if(fCpId !== -1){
+                fCp = CONNECTOR_MANAGER.connectionPointGetById(fCpId);
+                currentCloud = [fCp.id, secondConPoint.id];
+            }
+        }
     } else{
         throw "main:connectorMovePoint() - this should never happen";
     }   
@@ -2537,6 +2609,7 @@ function draw(){
 *Returns the canvas data but without the selections and grid.
 *@return {DOMString} - the result of a toDataURL() call on the temporary canvas
 *@author Alex
+*@author Artyom
 **/
 function renderedCanvas(){
    var canvas = getCanvas();
@@ -2556,7 +2629,7 @@ function renderedCanvas(){
    tempCanvas.setAttribute('width', canvas.width);
    tempCanvas.setAttribute('height', canvas.height);
    reset(tempCanvas);
-   STACK.paint(tempCanvas.getContext('2d'), true);				
+   STACK.paint(tempCanvas.getContext('2d'), true);
    //end render
 
    return tempCanvas.toDataURL();
