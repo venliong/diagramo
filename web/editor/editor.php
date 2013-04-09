@@ -79,6 +79,7 @@ $page = 'editor';
         <script type="text/javascript" src="./lib/log.js"></script>
         <script type="text/javascript" src="./lib/text.js"></script>
         <script type="text/javascript" src="./lib/browserReady.js"></script>
+        <script type="text/javascript" src="./lib/containers.js"></script>
         <script type="text/javascript" src="./lib/main.js"></script>
         
         <script type="text/javascript" src="./lib/sets/basic/basic.js"></script>
@@ -107,9 +108,11 @@ $page = 'editor';
         <script type="text/javascript" src="./lib/commands/GroupDeleteCommand.js"></script>
         <script type="text/javascript" src="./lib/commands/GroupTranslateCommand.js"></script>
         
-        <script type="text/javascript" src="./lib/containers.js"></script>
+        
         <script type="text/javascript" src="./lib/commands/ContainerCreateCommand.js"></script>
+        <script type="text/javascript" src="./lib/commands/ContainerDeleteCommand.js"></script>
         <script type="text/javascript" src="./lib/commands/ContainerTranslateCommand.js"></script>
+        <script type="text/javascript" src="./lib/commands/ContainerScaleCommand.js"></script>
         
         <script type="text/javascript" src="./lib/commands/ConnectorCreateCommand.js"></script>
         <script type="text/javascript" src="./lib/commands/ConnectorDeleteCommand.js"></script>                                
