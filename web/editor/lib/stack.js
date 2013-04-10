@@ -16,6 +16,8 @@ function Stack(){
     /**Keeps all the groups in the canvas*/
     this.groups = [];
     
+    this.containers = [];
+    
     /**Keeps current generated Id. Not for direct access*/
     this.currentId = 0;
     
@@ -214,6 +216,11 @@ Stack.prototype = {
         this.figures.push(figure);
         this.idToIndex[figure.id] = this.figures.length-1;
     },
+    
+    
+    containerAdd : function(container){
+        this.containers.push(container);
+    },
 
     /*code taken from ConnectionPoint.removeConnector
      *@param {Figure} figure - the figure to remove
@@ -238,6 +245,28 @@ Stack.prototype = {
             this.figureSelectedIndex--;
         }
     },
+            
+    /**Removes a container by it's id
+     *@param {Number} containerId - the {Container}'s id
+     *@author Alex Gheorghiu <alex@scriptoid.com>
+     **/
+    containerRemoveById :function(containerId){
+        var index = -1;
+        for(var i=0; i<this.containers.length; i++ ){
+            if(this.containers[i].id === containerId){
+                index = i;
+                break;
+            }
+        }
+
+        if(index > -1){
+            //remove figure
+            this.containers.splice(index, 1);
+
+            //reindex
+//            this.reindex();
+        }                
+    },            
 
     /**Removes a figure by it's id
      *@param {Number} figId - the {Figure}'s id
@@ -454,6 +483,60 @@ Stack.prototype = {
     
     
     /**
+     *Returns the Container's id if there is a container for the given coordinates
+     *It will return the first container we found from top to bottom (Z-order)
+     *@param {Number} x - the value on Ox axis
+     *@param {Number} y - the value on Ox axis
+     *@return {Number} - the id of the container or -1 if none found
+     *@author Alex Gheorghiu <alex@scriptoid.com>
+     **/
+    containerGetByXY:function(x,y){
+        var id = -1;
+        for(var i= this.containers.length-1; i>=0; i--){
+            if(this.containers[i].contains(x, y)){
+                id = this.containers[i].id;
+                break;
+            } //end if
+        }//end for
+        return id;
+    },
+    
+    
+    /**
+     *Returns the Container's id if there is a container for the given coordinates
+     *It will return the first container we found from top to bottom (Z-order)
+     *@param {Number} x - the value on Ox axis
+     *@param {Number} y - the value on Ox axis
+     *@return {Number} - the id of the {Container} or -1 if none found
+     *@author Alex Gheorghiu <alex@scriptoid.com>
+     **/
+    containerGetByXYOnEdge:function(x,y){
+        var id = -1;
+        for(var i= this.containers.length-1; i>=0; i--){
+            if(this.containers[i].onEdge(x, y)){
+                id = this.containers[i].id;
+                break;
+            } //end if
+        }//end for
+        
+        return id;
+    },
+    
+    
+    /**Returns a container by id
+     *@param {Number} id - the id of the container
+     *@return {Container} - the container object or null if no container with that id found
+     **/
+    containerGetById:function(id){
+        for(var i=0; i<this.containers.length; i++){
+            if(this.containers[i].id == id){
+                return this.containers[i];
+            }
+        }
+        return null;
+    },    
+    
+    /**
      *Returns an Array of Figure's id if there are figures for the given coordinates
      *@param {Number} x - the value on Ox axis
      *@param {Number} y - the value on Ox axis
@@ -603,6 +686,42 @@ Stack.prototype = {
         }
         return found;
     },
+        
+        
+    /**Test if an (x,y) is over a container
+     *@param {Number} x - the x coordinates
+     *@param {Number} y - the y coordinates
+     *@return {Boolean} - true if over a container, false otherwise
+     **/
+    containerIsOver:function(x, y){
+        var found = false;
+        for(var i=0; i< this.containers.length; i++){
+            var container = this.containers[i];
+            if(container.contains(x, y)){
+                found = true;
+                break;
+            }
+        }
+        return found;
+    },
+        
+        
+    /**Test if an (x,y) is over a Container's edge (rigt on its edge)
+     *@param {Number} x - the x coordinates
+     *@param {Number} y - the y coordinates
+     *@return {Boolean} - true if over a container, false otherwise
+     **/
+    containerIsOnEdge:function(x, y){
+        var found = false;
+        for(var i=0; i< this.containers.length; i++){
+            var container = this.containers[i];
+            if(container.onEdge(x, y)){
+                found = true;
+                break;
+            }
+        }
+        return found;
+    },
 
 
     /**Paints all {Figure}s from back to top (Z order)
@@ -628,6 +747,7 @@ Stack.prototype = {
             context.fillText("state: " + state, 0, 10 * pos++);
             context.fillText("selectedFigureId: : " + selectedFigureId, 0, 10 * pos++);
             context.fillText("selectedGroupId: : " + selectedGroupId, 0, 10 * pos++);
+            context.fillText("selectedContainerId: : " + selectedContainerId, 0, 10 * pos++);
             if(selectedGroupId != -1){
                 var logGroup = this.groupGetById(selectedGroupId);
                 context.fillText("permanent: : " + logGroup.permanent, 0, 10 * pos++);
@@ -640,6 +760,16 @@ Stack.prototype = {
                 
             context.restore();
         }
+        
+        //paint containers
+        for(var i=0; i<this.containers.length; i++){
+            context.save();
+            
+            this.containers[i].paint(context);
+            
+            context.restore();
+        }
+        //end paint containers
         
         
         //paint figures
@@ -664,6 +794,14 @@ Stack.prototype = {
         }//end for
 
 
+        //if we are connecting something we should paint currentCloud too
+        if( state == STATE_CONNECTOR_PICK_FIRST || state == STATE_CONNECTOR_PICK_SECOND
+            || state == STATE_CONNECTOR_MOVE_POINT )
+        {
+            CONNECTOR_MANAGER.connectionCloudPaint(context);
+        }
+
+
         //paint connector(s)
         CONNECTOR_MANAGER.connectorPaint(context, selectedConnectorId);
         
@@ -683,6 +821,13 @@ Stack.prototype = {
 			if(!ignoreSelection){
 				HandleManager.paint(context);
 			}
+        }
+        else if(state == STATE_CONTAINER_SELECTED){ //CONTAINER
+            var cont = STACK.containerGetById(selectedContainerId);
+            HandleManager.shapeSet(cont);
+            if(!ignoreSelection){
+                HandleManager.paint(context);
+            }
         }
         else if(state == STATE_GROUP_SELECTED){ //GROUP 
             var g = this.groupGetById(selectedGroupId);

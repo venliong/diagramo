@@ -1695,7 +1695,7 @@ Arc.prototype = {
             for(var i=0; i<curves.length; i++){
                 curves[i].transform(matrix);
             }
-            }
+        }
     },
 
 
@@ -2976,6 +2976,7 @@ Figure.prototype = {
         }
         return false;
     },
+    
     toString:function(){
         var result = this.name + ' [id: ' + this.id + '] (';
         for(var i = 0; i<this.primitives.length; i++ ){
