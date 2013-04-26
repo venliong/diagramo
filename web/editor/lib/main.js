@@ -43,6 +43,16 @@ var SNAP_DISTANCE = 5;
 var fillColor=null;
 var strokeColor='#000000';
 var currentText=null;
+
+/** Instance of Browser Class for defining browser */
+var Browser = new Browser();
+
+/**Default top&bottom padding of Text editor's textarea*/
+var defaultEditorPadding = 6;
+
+/**Default border width of Text editor's textarea*/
+var defaultEditorBorderWidth = 1;
+
 var FIGURE_ESCAPE_DISTANCE = 30; /**the distance by which the connectors will escape Figure's bounds*/
 
 /**the distance by which the connectors will be able to connect with Figure*/
@@ -157,6 +167,10 @@ var STATE_GROUP_SELECTED = 'group_selected';
 /**we have a container selected*/
 var STATE_CONTAINER_SELECTED = 'container_selected';
 
+/**we have a text editing*/
+//var STATE_TEXT_EDITING = STATE_FIGURE_SELECTED;
+var STATE_TEXT_EDITING = 'text_editing';
+
 /**Keeps current state*/
 var state = STATE_NONE;
 
@@ -180,6 +194,9 @@ var lastClick = [];
 
 /**Default line width*/
 var defaultLineWidth = 2;
+
+/**Current instance of TextEditorPopup*/
+var currentTextEditor = null;
 
 /**Current selected figure id ( -1 if none selected)*/
 var selectedFigureId = -1;
@@ -261,12 +278,12 @@ function setFigureSet(id){
  *@param {String} property - (or an {Array} of {String}s). The 'id' under which the property is stored
  *TODO: is there any case where we are using property as an array ?
  *@param {String} newValue - the new value of the property
- *@author Zack, Alex
+ *@author Zack, Alex, Artyom
  **/
 function updateShape(shapeId, property, newValue){
     //Log.group("main.js-->updateFigure");
     //Log.info("updateShape() figureId: " + figureId + " property: " + property + ' new value: ' + newValue);
-    
+
     var obj = STACK.figureGetById(shapeId); //try to find it inside {Figure}s
 
 
@@ -376,15 +393,28 @@ function setUpEditPanel(shape){
                 //do nothing. We do not want to offer this to groups
                 break;
             case 'Container':
-                Builder.contructPropertiesPanel(propertiesPanel, shape);                
+                Builder.constructPropertiesPanel(propertiesPanel, shape);
                 break;
             case 'CanvasProps':
                 Builder.constructCanvasPropertiesPanel(propertiesPanel, shape);
                 break;
             default: //both Figure and Connector
-                Builder.contructPropertiesPanel(propertiesPanel, shape);
+                Builder.constructPropertiesPanel(propertiesPanel, shape);
         }
     }
+}
+
+/**Setup edit mode for Text primitive.
+ *@param shape - parent of Text primitive. Can be either Connector or Figure.
+ *@param {Number} textPrimitiveId - the id value of Text primitive
+ **/
+function setUpTextEditorPopup(shape, textPrimitiveId) {
+    // get elements of Text Editor and it's tools
+    var textEditor = document.getElementById('text-editor');
+    var textEditorTools = document.getElementById('text-editor-tools');
+
+    // set current Text editor to use it further in code
+    currentTextEditor = Builder.constructTextPropertiesPanel(textEditor, textEditorTools, shape, textPrimitiveId);
 }
 
 
@@ -404,6 +434,12 @@ function createFigure(fFunction, thumbURL){
     selectedFigureId = -1;
     selectedConnectorId = -1;
     selectedConnectionPointId = -1;
+
+    if (state == STATE_TEXT_EDITING) {
+        currentTextEditor.destroy();
+        currentTextEditor = null;
+    }
+
     state = STATE_FIGURE_CREATE;
     draw();
 
@@ -542,7 +578,12 @@ function onKeyDown(ev){
             selectedConnectionPointId = -1;
             selectedConnectorId = -1;
 
-            
+            // clear current text editor
+            if (state == STATE_TEXT_EDITING) {
+                currentTextEditor.destroy();
+                currentTextEditor = null;
+            }
+
             state = STATE_NONE;
             break;
 
@@ -784,6 +825,31 @@ function onMouseDown(ev){
     //alert("onMouseDown() + state " + state + " none state is " + STATE_NONE);
     
     switch(state){
+        case STATE_TEXT_EDITING:
+
+            /*Description:
+             * If we have active text editor in popup and we click mouse.  Here is what can happen:
+             * - if we clicked inside current text editor that nothing is happening
+             * - if we clicked canvas:
+             *      - we will remove text editor
+             *      - we will switch to STATE_NONE
+             *      - we will run STATE_NONE case next (without break;)
+             */
+
+            if (currentTextEditor.mouseClickedInside(ev)) {
+                break;
+            } else {
+                currentTextEditor.destroy();
+                currentTextEditor = null;
+
+                state = STATE_NONE;
+            }
+
+        // TODO: Further needs to be the same behaviour as for the STATE_NONE case
+        // to avoid repeating of the code next "break" statement commented to let execution flow down
+        // break;
+
+
         case STATE_NONE:
             //alert("onMouseDown() - STATE_NONE");
             snapMonitor = [0,0];
@@ -866,7 +932,6 @@ function onMouseDown(ev){
 //            redraw = true;
             throw "canvas> onMouseDown> STATE_FIGURE_CREATE> : this should not happen";  
             break;
-
 
         case STATE_FIGURE_SELECTED:
             snapMonitor = [0,0];
@@ -1572,7 +1637,6 @@ var lastMove = null;
  **/
 var snapMonitor = [0,0];
 
-
 /**Treats the mouse move event
  *@param {Event} ev - the event generated when key is up
  **/
@@ -1782,7 +1846,44 @@ function onMouseMove(ev){
             }
             
             break;
-            
+
+        case STATE_TEXT_EDITING:
+
+            /*Description:
+             * We have a text editor.  Here is what can happen:
+             * - if the mouse is pressed
+             *      - this should never happen
+             * - if mouse is not pressed then change the cursor type to :
+             *      - "move" if over a figure or connector
+             *      - "handle" if over current figure's handle
+             *      - "default" if over "nothing"
+             */
+
+            if (!mousePressed) {
+
+                var handle = HandleManager.handleGet(x,y); //TODO: we should be able to replace it with .getSelectedHandle()
+
+                if(handle != null){ //We are over a Handle of selected Figure
+                    canvas.style.cursor = handle.getCursor();
+                    Log.info('onMouseMove() - STATE_TEXT_EDITING + over a Handler = change cursor to: ' + canvas.style.cursor);
+                }
+                else{
+                    /*move figure only if no handle is selected*/
+                    var tmpFigId = STACK.figureGetByXY(x, y); //pick first figure from (x, y)
+                    if(tmpFigId != -1){
+                        canvas.style.cursor = 'move';
+                        Log.info("onMouseMove() + STATE_TEXT_EDITING + over a figure = change cursor");
+                    }
+                    else{
+                        canvas.style.cursor = 'default';
+                        Log.info("onMouseMove() + STATE_TEXT_EDITING + over nothin = change cursor to default");
+                    }
+                }
+            } else {
+                throw "main:onMouseMove() - this should never happen";
+            }
+
+            break;
             
        case STATE_CONTAINER_SELECTED:
            //throw "main.js onMouseMove() + STATE_CONTAINER_SELECTED:  Not implemented";           
@@ -2055,6 +2156,116 @@ function onMouseMove(ev){
     if(redraw){
         draw();
     }
+    return false;
+}
+
+
+/**Treats the mouse double click event
+ *@param {Event} ev - the event generated when key is clicked twice
+ **/
+function onDblClick(ev) {
+    var coords = getCanvasXY(ev);
+    var x = coords[0];
+    var y = coords[1];
+    lastClick = [x,y];
+
+    // store clicked figure or connector
+    var shape = null;
+
+    // store id value of clicked text primitive
+    var textPrimitiveId = -1;
+
+
+    /*Description:
+     *In case you double clicked the mouse:
+     *  - if clicked a connector
+     *          - save connector to shape
+     *          - save id value of text primitive (0 by default) to textPrimitiveId
+     *  - else
+     *      - if clicked a text inside connector
+     *          - save connector to shape
+     *          - save id value of text primitive (0 by default) to textPrimitiveId
+     *      - else
+     *          - if clicked a figure
+     *              - if clicked a text primitive of figure
+     *                  - save figure to shape
+     *                  - save id value of text primitive to textPrimitiveId
+     *  - if connector, text primitive inside connector or figure clicked
+     *          - if group selected
+     *              - if group is permanent then destroy it
+     *              - deselect current group
+     *          - deselect current figure
+     *          - deselect current connector
+     *          - set current state as STATE_TEXT_EDITING
+     *          - set up text editor and assign it to currentTextEditor variable
+     *  - else do nothing
+     **/
+
+    //find Connector at (x,y)
+    var cId = CONNECTOR_MANAGER.connectorGetByXY(x, y);
+    var connector = CONNECTOR_MANAGER.connectorGetById(cId);
+
+    // check if we clicked a connector
+    if(cId != -1){
+        shape = connector;
+        textPrimitiveId = 0;
+    } else {
+        cId = CONNECTOR_MANAGER.connectorGetByTextXY(x, y);
+        connector = CONNECTOR_MANAGER.connectorGetById(cId);
+
+        // check if we clicked a text of connector
+        if (cId != -1) {
+            shape = connector;
+            textPrimitiveId = 0;
+        } else {
+            //find Figure at (x,y)
+            var fId = STACK.figureGetByXY(x,y);
+
+            // check if we clicked a figure
+            if (fId != -1) {
+                var figure = STACK.figureGetById(fId);
+                var tId = STACK.textGetByFigureXY(fId, x, y);
+
+                // if we clicked text primitive inside of figure
+                if (tId !== -1) {
+                    shape = figure;
+                    textPrimitiveId = tId;
+                }
+            }
+        }
+    }
+
+    // check if we clicked a text primitive inside of shape
+    if (textPrimitiveId != -1) {
+        // if group selected
+        if (state == STATE_GROUP_SELECTED) {
+            var selectedGroup = STACK.groupGetById(selectedGroupId);
+
+            // if group is temporary then destroy it
+            if(!selectedGroup.permanent){
+                STACK.groupDestroy(selectedGroupId);
+            }
+
+            //deselect current group
+            selectedGroupId = -1;
+        }
+
+        // deselect current figure
+        selectedFigureId = -1;
+
+        // deselect current connector
+        selectedConnectorId = -1;
+
+        // set current state
+        state = STATE_TEXT_EDITING;
+
+        // set up text editor
+        setUpTextEditorPopup(shape, textPrimitiveId);
+        redraw = true;
+    }
+
+    draw();
+
     return false;
 }
 
@@ -2714,6 +2925,12 @@ function save(){
     
     //alert("save triggered! diagramId = " + diagramId  );
     Log.info('Save pressed');
+
+    if (state == STATE_TEXT_EDITING) {
+        currentTextEditor.destroy();
+        currentTextEditor = null;
+        state = STATE_NONE;
+    }
     
     var dataURL = null;
     try{
@@ -2869,6 +3086,7 @@ function saveAs(){
 
 
 /**Add listeners to elements on the page*/
+// TODO: set dblclick handler for mobile (touches)
 function addListeners(){
     var canvas = getCanvas();
 
@@ -2882,6 +3100,7 @@ function addListeners(){
     canvas.addEventListener("mousemove", onMouseMove, false);
     canvas.addEventListener("mousedown", onMouseDown, false);
     canvas.addEventListener("mouseup", onMouseUp, false);
+    canvas.addEventListener("dblclick", onDblClick, false);
 
 
     if(false){
@@ -2998,7 +3217,12 @@ function action(action){
             
         case 'container':
             Log.info("main.js->action()->container. Nr of actions in the STACK: " + History.COMMANDS.length);
-            
+
+            if (state == STATE_TEXT_EDITING) {
+                currentTextEditor.destroy();
+                currentTextEditor = null;
+            }
+
             //creates a container
             var cmdContainerCreate = new ContainerCreateCommand(300, 300);
             cmdContainerCreate.execute();
@@ -3026,6 +3250,10 @@ function action(action){
             break;
        
         case 'connector-jagged':
+            if (state == STATE_TEXT_EDITING) {
+                currentTextEditor.destroy();
+                currentTextEditor = null;
+            }
             selectedFigureId = -1;
             state  = STATE_CONNECTOR_PICK_FIRST;
             connectorType = Connector.TYPE_JAGGED;
@@ -3033,6 +3261,10 @@ function action(action){
             break;
 
         case 'connector-straight':
+            if (state == STATE_TEXT_EDITING) {
+                currentTextEditor.destroy();
+                currentTextEditor = null;
+            }
             selectedFigureId = -1;            
             state  = STATE_CONNECTOR_PICK_FIRST;
             connectorType = Connector.TYPE_STRAIGHT;
@@ -3040,6 +3272,10 @@ function action(action){
             break;
             
         case 'connector-organic':
+            if (state == STATE_TEXT_EDITING) {
+                currentTextEditor.destroy();
+                currentTextEditor = null;
+            }
             selectedFigureId = -1;            
             state  = STATE_CONNECTOR_PICK_FIRST;
             connectorType = Connector.TYPE_ORGANIC;
