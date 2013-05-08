@@ -278,11 +278,16 @@ function setFigureSet(id){
  *@param {String} property - (or an {Array} of {String}s). The 'id' under which the property is stored
  *TODO: is there any case where we are using property as an array ?
  *@param {String} newValue - the new value of the property
+ *@param {Boolean} [skipCommand = false] - if true than current {Command} won't be added to the {History}
+ *@param {String} [previousValue] - the previous value of the property
  *@author Zack, Alex, Artyom
  **/
-function updateShape(shapeId, property, newValue){
+function updateShape(shapeId, property, newValue, skipCommand, previousValue){
     //Log.group("main.js-->updateFigure");
     //Log.info("updateShape() figureId: " + figureId + " property: " + property + ' new value: ' + newValue);
+
+    // set default values of optional params
+    skipCommand = skipCommand || false;
 
     var obj = STACK.figureGetById(shapeId); //try to find it inside {Figure}s
 
@@ -341,25 +346,29 @@ function updateShape(shapeId, property, newValue){
          * a method of form set<property_name> in place
          */
         
-        if(newValue != obj[propGet]()){ //update ONLY if new value differ from the old one
+        if((typeof(previousValue) !== 'undefined' && previousValue != obj[propGet])
+            || (typeof(previousValue) === 'undefined' && newValue != obj[propGet]())){ //update ONLY if new value differ from the old one
             //Log.info('updateShape() : penultimate propSet: ' +  propSet);
-            if(obj[propGet]() != newValue){
-                var undo = new ShapeChangePropertyCommand(shapeId, property, newValue);
+                var undo = new ShapeChangePropertyCommand(shapeId, property, newValue, previousValue);
                 undo.execute();
-                History.addUndo(undo);
+
+                if (!skipCommand) {
+                    History.addUndo(undo);
+                }
             }
             //Log.info('updateShape() : call setXXX on object: ' +  propSet + " new value: " + newValue);
             //            obj[propSet](figure,newValue);
             obj[propSet](newValue);
-        }
     }
     else{
-        if(obj[propName] != newValue){ //try to change it ONLY if new value is different than the last one
-            if(obj[propName] != newValue){
-                var undo = new ShapeChangePropertyCommand(shapeId, property, newValue)
+        if( (typeof(previousValue) !== 'undefined' && obj[propName] != previousValue)
+            || (typeof(previousValue) === 'undefined' && obj[propName] != newValue)){ //try to change it ONLY if new value is different than the last one
+                var undo = new ShapeChangePropertyCommand(shapeId, property, newValue, previousValue);
                 undo.execute();
-                History.addUndo(undo);
-            }
+
+                if (!skipCommand) {
+                    History.addUndo(undo);
+                }
             obj[propName] = newValue;
         }
     }
@@ -783,6 +792,16 @@ function onKeyDown(ev){
                 ev.preventDefault();
             }
             break;
+
+        case KEY.P:
+            if (currentDiagramId !== null) {
+                if(CNTRL_PRESSED){
+                    Log.info("CTRL-P pressed  ");
+                    print_diagram();
+                    ev.preventDefault();
+                }
+            }
+            break;
     }
     draw();
     return false;
@@ -834,6 +853,7 @@ function onMouseDown(ev){
              * If we have active text editor in popup and we click mouse.  Here is what can happen:
              * - if we clicked inside current text editor that nothing is happening
              * - if we clicked canvas:
+             *      - we trigger onblur of text editor for IE and FF manually
              *      - we will remove text editor
              *      - we will switch to STATE_NONE
              *      - we will run STATE_NONE case next (without break;)
@@ -842,6 +862,12 @@ function onMouseDown(ev){
             if (currentTextEditor.mouseClickedInside(ev)) {
                 break;
             } else {
+                // IE and Firefox doesn't trigger blur event when mouse clicked canvas
+                // that is why we trigger this event manually
+                if (Browser.msie || Browser.mozilla) {
+                    currentTextEditor.blurTextArea();
+                }
+
                 currentTextEditor.destroy();
                 currentTextEditor = null;
 
@@ -2338,10 +2364,6 @@ function connectorPickSecond(x, y, ev){
     //current connector
     var con = CONNECTOR_MANAGER.connectorGetById(selectedConnectorId); //it should be the last one
     var cps = CONNECTOR_MANAGER.connectionPointGetAllByParent(con.id);
-
-    // MANAGE TEXT
-    // update position of connector's text
-    con.updateMiddleText();
     
     //TODO: remove 
     //play with algorithm
@@ -2411,6 +2433,10 @@ function connectorPickSecond(x, y, ev){
     con.turningPoints = Point.cloneArray(debugSolutions[0][2]);
     //CONNECTOR_MANAGER.connectionPointGetFirstForConnector(selectedConnectorId).point = con.turningPoints[0].clone();
     secConPoint.point = con.turningPoints[con.turningPoints.length-1].clone();
+
+    // MANAGE TEXT
+    // update position of connector's text
+    con.updateMiddleText();
 
     // before defining of {ConnectionPoint}'s position we reset currentCloud
     currentCloud = [];
@@ -3013,6 +3039,71 @@ function save(){
     );
 
 
+}
+
+/** Print current diagram
+ * Print can be triggered in 3 cases only after diagram was saved:
+ *  1 - from menu
+ *  2 - from quick toolbar
+ *  3 - from Ctrl + P shortcut
+ *
+ *  Copy link to saved diagram's png file to src of image,
+ *  add it to iframe and call print of last.
+ *
+ *  @author Artyom Pokatilov <artyom.pokatilov@gmail.com>
+ **/
+function print_diagram() {
+    var printFrameId = "printFrame";
+
+    var iframe = document.getElementById(printFrameId);
+
+    // if iframe isn't created
+    if (iframe == null) {
+        iframe = document.createElement("IFRAME");
+        iframe.id = printFrameId;
+
+        // hiding iframe
+        iframe.style.position = "absolute";
+        iframe.style.left = "-30000px";
+        iframe.style.top = "-30000px";
+
+        document.body.appendChild(iframe);
+    }
+
+    // get DOM of iframe
+    var frameDoc = iframe.contentDocument;
+
+    var diagramImages = frameDoc.getElementsByTagName('img');
+    var diagramImage;
+    if(diagramImages.length > 0) {     // if image is already added
+        diagramImage = diagramImages[0];
+
+        // set source of image to png of saved diagram
+        diagramImage.setAttribute('src', "data/diagrams/" + currentDiagramId + ".png");
+
+    } else {                        // if image isn't created yet
+        diagramImage = frameDoc.createElement('img');
+
+        // set source of image to png of saved diagram
+        diagramImage.setAttribute('src', "data/diagrams/" + currentDiagramId + ".png");
+
+        if (frameDoc.body !== null) {
+            frameDoc.body.appendChild(diagramImage);
+        } else {  // IE case
+            // create body of iframe
+            frameDoc.src = "javascript:'<body></body>'";
+            // append image through html of <img>
+            frameDoc.write(diagramImage.outerHTML);
+            frameDoc.close();
+        }
+    }
+
+    // adjust iframe size to main canvas (as it might have been changed)
+    iframe.setAttribute('width', canvasProps.getWidth());
+    iframe.setAttribute('height', canvasProps.getHeight());
+
+    // print iframe
+    iframe.contentWindow.print();
 }
 
 /**Exports current canvas as SVG*/
