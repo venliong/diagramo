@@ -28,6 +28,7 @@ FigureCreateCommand.prototype = {
     execute : function(){
         if(this.firstExecute){
             //create figure
+            //Log.info("FigureCreateCommand> execute> factoryFunction=" + this.factoryFunction);
             var createdFigure = this.factoryFunction(this.x, this.y);
               
             //move it into position
@@ -40,6 +41,16 @@ FigureCreateCommand.prototype = {
         
             //add to STACK
             STACK.figureAdd(createdFigure);
+            
+            //See if we need to add it to a container if we dropped it inside one
+            var containerId = STACK.containerGetByXY(this.x, this.y);
+            if(containerId !== -1){ //
+                var container = STACK.containerGetById(containerId);
+                if( Util.areBoundsInBounds( createdFigure.getBounds(), container.getBounds() ) ){
+                    CONTAINER_MANAGER.addFigure(containerId, this.figureId);
+                }
+            }
+            
         
             //make this the selected figure
             selectedFigureId = createdFigure.id;
@@ -59,8 +70,25 @@ FigureCreateCommand.prototype = {
     
     
     /**This method should be called every time the Command should be undone*/
-    undo : function(){ 
+    undo : function(){
+
+        // if current figure is in text editing state
+        if (state == STATE_TEXT_EDITING) {
+            // remove current text editor
+            currentTextEditor.destroy();
+            currentTextEditor = null;
+        }
+
+        //remove it from container (if belongs to one)
+        var containerId = CONTAINER_MANAGER.getContainerForFigure(this.figureId);
+        if(containerId !== -1){
+            CONTAINER_MANAGER.removeFigure(containerId, this.figureId);
+        }
+
+        //remove figure
         STACK.figureRemoveById(this.figureId);
+        
+        //change state
         state = STATE_NONE;
     }
 }
