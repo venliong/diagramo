@@ -1575,17 +1575,31 @@ function onMouseUp(ev){
                         points.push( new Point(STACK.figures[i].getBounds()[0], STACK.figures[i].getBounds()[3]) ); //bottom left
                         points.push( new Point(STACK.figures[i].getBounds()[2], STACK.figures[i].getBounds()[1]) ); //top right
                     }
+
+                    // flag shows if figure added to figuresToAdd array
+                    var figureAddFlag = false;
                     
-                    //TODO: From Janis: we can remove this, because intersection(next block) will also select figures whose point is in area
-                    //for(var a = 0; a < points.length; a++){
-                    //    if( Util.isPointInside(points[a], selectionArea.getPoints()) ){
-                    //        figuresToAdd.push(STACK.figures[i].id);
-                    //        break;
-                    //    }
-                    //}
+                    
+                    /**Idea: We want to select both figures completely encompassed by 
+                     * selection (case 1) and those that are intersected by selection (case 2)*/
+
+                    //1 - test if any figure point inside selection
+                    for(var a = 0; a < points.length; a++){
+                        if( Util.isPointInside(points[a], selectionArea.getPoints()) ){
+                            figuresToAdd.push(STACK.figures[i].id);
+                            // set flag not to add figure twice
+                            figureAddFlag = true;
+                            break;
+                        }
+                    }
+                    
+                    //2 - test if any figure intersected by selection
+                    if(!figureAddFlag){ //run this ONLY if is not already proposed for addition
+                        figureAddFlag = Util.polylineIntersectsRectangle(points, selectionArea.getBounds(), true);
+                    }
                     
                     //select figures whose line intersects selectionArea
-                    if(Util.polylineIntersectsRectangle(points,selectionArea.getBounds(),true)){
+                    if (figureAddFlag){
                         figuresToAdd.push(STACK.figures[i].id);
                     }
                 } //end if
