@@ -670,7 +670,8 @@ ConnectorManager.prototype = {
      *@author Alex Gheorghiu <alex@scriptoid.com>
      **/
     connector2Points: function(type,  startPoint, endPoint, sBounds, eBounds ){
-        Log.level = LOG_LEVEL_NONE; 
+        var oldLogLevel = Log.level;
+//        Log.level = Log.LOG_LEVEL_DEBUG; 
         
         Log.group("connectionManager: connector2Points");
         
@@ -1022,7 +1023,7 @@ ConnectorManager.prototype = {
         
         Log.groupEnd();
         
-        Log.level = LOG_LEVEL_INFO; 
+        Log.level = oldLogLevel; 
         
         return solutions;
     },
