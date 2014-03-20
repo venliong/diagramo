@@ -33,21 +33,6 @@ ConnectorManager.CLOUD_RADIUS = 12;
 ConnectorManager.CLOUD_LINEWIDTH = 3;
 ConnectorManager.CLOUD_STROKE_STYLE = "rgba(255, 153, 0, 0.8)"; //orange
 
-// defines connection type of start and end points for {Connector}
-var ConnectionType = {
-    // both points have locked position
-    NO_AUTOMATIC: 'no_automatic',
-    // end point has locked position:
-    // this happens when start point is connected to a figure, not to it's specific {ConnectionPoint}
-    START_AUTOMATIC: 'start_automatic',
-    // start point has locked position
-    // this happens when end point is connected to a figure, not to it's specific {ConnectionPoint}
-    END_AUTOMATIC: 'end_automatic',
-    // both points have locked position
-    // this happens when both start and end points are connected to figures, not to their's specific {ConnectionPoint}
-    BOTH_AUTOMATIC: 'both_automatic'
-};
-
 /**Creates a {ConnectorManager} out of JSON parsed object
  *@param {JSONObject} o - the JSON parsed object
  *@return {ConnectorManager} a newly constructed ConnectorManager
@@ -428,23 +413,23 @@ ConnectorManager.prototype = {
             con.turningPoints = [start, end];
         }
         else if(con.type == Connector.TYPE_JAGGED || con.type == Connector.TYPE_ORGANIC){
-            //first point
+            //first ConnectionPoint
             var startPoint = conCps[0].point.clone();
             
-            //second point
+            //second ConnectionPoint
             var endPoint = conCps[1].point.clone();
             
-            //first bounds
+            //first bounds (of start figure)
             var sFigure = STACK.figureGetAsFirstFigureForConnector(con.id);
             var sBounds =  sFigure == null ? null : sFigure.getBounds();
-                
-            //second bounds
+
+            //second bounds (of end figure)
             var eFigure = STACK.figureGetAsSecondFigureForConnector(con.id);
             var eBounds = eFigure == null ? null : eFigure.getBounds();
             
             //adjust connector
             var solutions = this.connector2Points(Connector.TYPE_JAGGED, startPoint, endPoint, sBounds, eBounds);
-            var solution = solutions[0][2];
+            var solution = solutions[0][2]; //solution = a vector of turning points
             
             con.turningPoints = solution;
             conCps[0].point = con.turningPoints[0].clone();
@@ -476,154 +461,205 @@ ConnectorManager.prototype = {
     },
 
 
-    /**This function returns connectionType for defined automatic start and automatic end flags
-     *@param {Boolean} automaticStart - flag define if start of connection isautomatic
-     *@param {Boolean} automaticEnd - flag define if end of connection isautomatic
-    *
-    *@retun {String} - valid ConnectionType
-     *@author Artyom Pokatilov <artyom.pokatilov@gmail.com>
-     **/
-    getConnectionType: function(automaticStart, automaticEnd) {
-        if (!automaticStart && !automaticEnd) {
-            return ConnectionType.NO_AUTOMATIC;
-        }
-        if (automaticStart && !automaticEnd) {
-            return ConnectionType.START_AUTOMATIC;
-        }
-        if (!automaticStart && automaticEnd) {
-            return ConnectionType.END_AUTOMATIC;
-        }
-        if (automaticStart && automaticEnd) {
-            return ConnectionType.BOTH_AUTOMATIC;
-        }
-    },
-
-
-    /**This function returns array of 2 points whose situated at 2 closest {ConnectionPoint}s' position
-     *@param {String} connectionType - one of predefined {ConnectionType} values
-     *@param {Number} startFId - id value of start {Figure}, in case: connectionType == ConnectionType.START_AUTOMATIC
-     *@param {Point} startPoint - start {Point} of connection, in case: connectionType == ConnectionType.END_AUTOMATIC or connectionType == ConnectionType.NO_AUTOMATIC
-     *@param {Number} endFId - id value of end {Figure}, in case: connectionType == ConnectionType.END_AUTOMATIC
-     *@param {Point} endPoint - end {Point} of connection, in case: connectionType == ConnectionType.START_AUTOMATIC or connectionType == ConnectionType.NO_AUTOMATIC
+    /**
+     * This function simply takes 2 points: M, N from 2 figures A, B (M belongs to A, 
+     * N belongs to B) and tries to find the
+     * nearest {ConnectionPoint}s to M ( C1i ) and nearest {ConnectionPoint}s to N  ( C2i ) and then
+     * pick those that have a minimum distance between them (minimum C1-C2 distance]
+     *   
+     *@param {Boolean} startAutomatic - flag defines if start of connection is automatic
+     *@param {Boolean} endAutomatic - flag defines if end of connection is automatic
+     *@param {Number} startFigureId - Start {Figure}'s id or -1 if no start {Figure} present
+     *@param {Point} startPoint - Start {Point} of connection
+     *@param {Number} endFigureId - End {Figure}'s id or -1 if no start {Figure} present
+     *@param {Point} endPoint - End {Point} of connection
      *
-     *@retun {Array} of 2 {Point}s - [point1, point2]
-     *@retun {Array} - in a form ([startPoint, endPoint, startConnectionPointId, endConnectionPointId])
+     *@retun {Array} - in a form of 
+     *  [
+     *  startPoint, 
+     *  endPoint, 
+     *  start {Figure}'s {ConnectionPoint} Id - or -1 if none, 
+     *  end {Figure}'s {ConnectionPoint}'s Id - or -1 if none
+     *  ]
      *@author Artyom Pokatilov <artyom.pokatilov@gmail.com>
      **/
-    getClosestPointsOfConnection: function(connectionType, startFId, startPoint, endFId, endPoint) {
-        var solutions = [];
-        switch (connectionType) {
-            // both points have locked position
-            // we taking defined {Point}s of connection
-            case ConnectionType.NO_AUTOMATIC:
-                solutions = [startPoint, endPoint, -1, -1];
-                break;
+    getClosestPointsOfConnection: function(startAutomatic, endAutomatic, startFigureId, startPoint, endFigureId, endPoint) {
 
-            // end point has locked position:
-            // we taking 1 point as position of closest {ConnectionPoint} connected with start point
-            // and 2 point as end {ConnectionPoint}
-            case ConnectionType.START_AUTOMATIC:
-                //get all connection points of start figure
-                var fCps = this.connectionPointGetAllByParent(startFId),
-                    fCpLength = fCps.length,
-                    closestPoint = fCps[0].point,
-                    closestConnectionPointId = fCps[0].id,
-                    minDistance = Util.distance(closestPoint, endPoint),
-                    curPoint,
-                    curDistance;
-
-                // find closest to endPoint
-                for(var i = 1; i < fCpLength; i++){
-                    curPoint = fCps[i].point;
-                    curDistance = Util.distance(curPoint, endPoint);
-                    if (curDistance < minDistance) {
-                        minDistance = curDistance;
-                        closestPoint = curPoint;
-                        closestConnectionPointId = fCps[i].id;
-                    }
-                }
-                solutions = [closestPoint.clone(), endPoint, closestConnectionPointId, -1];
-                break;
-
-            // start point has locked position:
-            // we taking 1 point as clone of {ConnectionPoint}
-            // and 2 point as position of closest {ConnectionPoint} connected with end point
-            case ConnectionType.END_AUTOMATIC:
-                //get all connection points of end figure
-                var fCps = this.connectionPointGetAllByParent(endFId),
-                    fCpLength = fCps.length,
-                    closestPoint = fCps[0].point,
-                    closestConnectionPointId = fCps[0].id,
-                    minDistance = Util.distance(startPoint, closestPoint),
-                    curPoint,
-                    curDistance;
-
-                // find closest to startPoint
-                for(var i = 1; i < fCpLength; i++){
-                    curPoint = fCps[i].point;
-                    curDistance = Util.distance(startPoint, curPoint);
-                    if (curDistance < minDistance) {
-                        minDistance = curDistance;
-                        closestPoint = curPoint;
-                        closestConnectionPointId = fCps[i].id;
-                    }
-                }
-                solutions = [startPoint, closestPoint.clone(), -1, closestConnectionPointId];
-                break;
-
-            // start and end points have locked position:
-            // we taking both as position of closest {ConnectionPoint} connected with start and end point
-            case ConnectionType.BOTH_AUTOMATIC:
-                // special case when figure is connected to itself
-                if (startFId == endFId) {
-                    // we will find closest to end point (mouse coordinates)
-                    // this means solutions will be the same as connecting to end point as START_AUTOMATIC where start and end connection point match
-                    solutions = this.getClosestPointsOfConnection(ConnectionType.START_AUTOMATIC, startFId, startPoint, endFId, endPoint);
-                    solutions[1] = solutions[0];
-                    solutions[3] = solutions[2];
-                    break;
-                }
-
-                //get all connection points of start figure
-                var startFCps = this.connectionPointGetAllByParent(startFId),
-                    startFCpLength = startFCps.length,
-                    curStartPoint,
-                    closestStartPoint = startFCps[0].point,
-                    closestStartConnectionPointId = startFCps[0].id,
-                    endFCps = this.connectionPointGetAllByParent(endFId),
-                    endFCpLength = endFCps.length,
-                    curEndPoint,
-                    closestEndPoint = endFCps[0].point,
-                    closestEndConnectionPointId = endFCps[0].id,
-                    minDistance = Util.distance(closestStartPoint,closestEndPoint),
-                    curDistance;
-
-                // find closest to endPoint
-                for(var i = 0; i < startFCpLength; i++){
-                    curStartPoint = startFCps[i].point;
-                    for(var j = 0; j < endFCpLength; j++){
-                        curEndPoint = endFCps[j].point;
-                        curDistance = Util.distance(curStartPoint, curEndPoint);
-                        if (curDistance < minDistance) {
-                            minDistance = curDistance;
-
-                            closestStartPoint = curStartPoint;
-                            closestStartConnectionPointId = startFCps[i].id;
-
-                            closestEndPoint = curEndPoint;
-                            closestEndConnectionPointId = endFCps[j].id;
-                        }
-                    }
-                }
-
-                solutions = [closestStartPoint.clone(), closestEndPoint.clone(), closestStartConnectionPointId, closestEndConnectionPointId];
-                break;
+        //We will have 4 cases depending on automaticStart and automaticEnd values        
+        
+        //Case 1
+        // both points have locked position
+        // we are taking defined {Point}s of connection
+        if (!startAutomatic && !endAutomatic) {
+            
+            //TODO: not fair not to return CPs'ids where we know for sure they 
+            //are present( !automaticStart && !automaticEnd)
+            return this.closestPointsFixed2Fixed(startPoint, endPoint);
         }
-        return solutions;
+
+        //Case 2
+        // end point has locked position:
+        // we are taking 1 point as position of closest {ConnectionPoint} connected with startPoint
+        // and 2 point as end {ConnectionPoint}
+        if (startAutomatic && !endAutomatic) {
+            return this.closestPointsAuto2Fixed(startFigureId, endPoint);
+        }
+
+        //Case 3
+        // start point has locked position:
+        // we taking 1 point as clone of {ConnectionPoint}
+        // and 2 point as position of closest {ConnectionPoint} connected with end point
+        if (!startAutomatic && endAutomatic) {
+            return this.closestPointsFixed2Auto(startPoint, endFigureId);
+        }
+
+        //Case 4
+        // start and end points have locked position:
+        // we taking both as position of closest {ConnectionPoint} connected with start and end point
+        if (startAutomatic && endAutomatic) {
+            return this.closestPointsAuto2Auto(startFigureId, startPoint, endFigureId, endPoint);
+        }
+    },
+    
+    
+    /**
+     * Special case of getClosestPointsOfConnection() when
+     * startAutomatic = true
+     * and 
+     * endAutomatic = true
+     * */
+    closestPointsAuto2Auto : function(startFigureId, startPoint, endFigureId, endPoint){
+        // special case when figure is connected to itself
+        if (startFigureId == endFigureId) {
+            // we will find closest to end point (mouse coordinates)
+            // this means solutions will be the same as connecting to end point
+            // from automatic start where start and end connection point match
+            var candidate = this.closestPointsAuto2Fixed(
+                startFigureId,  //start figure's id
+                startPoint, //start point
+                endFigureId, //end figure's id
+                endPoint //end 
+            );
+
+            candidate[1] = candidate[0];
+            candidate[3] = candidate[2];
+            return candidate;
+        }
+
+        //get all connection points of start figure
+        var startFCps = this.connectionPointGetAllByParent(startFigureId),
+            startFCpLength = startFCps.length,
+            curStartPoint,
+            closestStartPoint = startFCps[0].point,
+            closestStartConnectionPointId = startFCps[0].id,
+            endFCps = this.connectionPointGetAllByParent(endFigureId),
+            endFCpLength = endFCps.length,
+            curEndPoint,
+            closestEndPoint = endFCps[0].point,
+            closestEndConnectionPointId = endFCps[0].id,
+            minDistance = Util.distance(closestStartPoint,closestEndPoint),
+            curDistance;
+
+        // find closest to endPoint
+        for(var i = 0; i < startFCpLength; i++){
+            curStartPoint = startFCps[i].point;
+            for(var j = 0; j < endFCpLength; j++){
+                curEndPoint = endFCps[j].point;
+                curDistance = Util.distance(curStartPoint, curEndPoint);
+                if (curDistance < minDistance) {
+                    minDistance = curDistance;
+
+                    closestStartPoint = curStartPoint;
+                    closestStartConnectionPointId = startFCps[i].id;
+
+                    closestEndPoint = curEndPoint;
+                    closestEndConnectionPointId = endFCps[j].id;
+                }
+            }
+        }
+
+        return [closestStartPoint.clone(), closestEndPoint.clone(), closestStartConnectionPointId, closestEndConnectionPointId];
+    },
+    
+    /**
+     * Special case of getClosestPointsOfConnection() when
+     * startAutomatic = false
+     * and 
+     * endAutomatic = true
+     * */
+    closestPointsFixed2Auto : function(startPoint, endFigureId){
+        //
+        //get all connection points of end figure
+        var fCps = this.connectionPointGetAllByParent(endFigureId),
+            fCpLength = fCps.length,
+            closestPoint = fCps[0].point,
+            closestConnectionPointId = fCps[0].id,
+            minDistance = Util.distance(startPoint, closestPoint),
+            curPoint,
+            curDistance;
+
+        // find closest to startPoint
+        for(var i = 1; i < fCpLength; i++){
+            curPoint = fCps[i].point;
+            curDistance = Util.distance(startPoint, curPoint);
+            if (curDistance < minDistance) {
+                minDistance = curDistance;
+                closestPoint = curPoint;
+                closestConnectionPointId = fCps[i].id;
+            }
+        }
+        return [startPoint, closestPoint.clone(), -1, closestConnectionPointId];
     },
 
 
-    /**This function returns a "temp" connector between 2 points
+    /**
+     * Special case of getClosestPointsOfConnection() when
+     * startAutomatic = true
+     * and 
+     * endAutomatic = false
+     * */
+    closestPointsAuto2Fixed: function(startFigureId, endPoint){
+        //get all connection points of start figure
+        var fCps = this.connectionPointGetAllByParent(startFigureId),
+            fCpLength = fCps.length,
+            closestPoint = fCps[0].point,
+            closestConnectionPointId = fCps[0].id,
+            minDistance = Util.distance(closestPoint, endPoint),
+            curPoint,
+            curDistance;
+
+        // find closest to endPoint
+        for(var i = 1; i < fCpLength; i++){
+            curPoint = fCps[i].point;
+            curDistance = Util.distance(curPoint, endPoint);
+            if (curDistance < minDistance) {
+                minDistance = curDistance;
+                closestPoint = curPoint;
+                closestConnectionPointId = fCps[i].id;
+            }
+        }
+        return [closestPoint.clone(), endPoint, closestConnectionPointId, -1];
+    },
+    
+    
+    /**
+     * Special case of getClosestPointsOfConnection() when
+     * startAutomatic = false
+     * and 
+     * endAutomatic = false
+     * */
+    closestPointsFixed2Fixed : function (startPoint, endPoint){
+        return [startPoint, endPoint, -1, -1];
+    },
+    
+
+    /**This function returns a "temp" connector between 2 points. The points
+     * are usually inside some boundaries and we need to "discover" a path
+     * from start point to the end point.
+     * 
+     * Note: We are not using {ConnectionPoint}s here are this somehow a generic algorithm
+     * where we have a type of drawing, a start point, and end point and 2 boundaries to
+     * consider.
      *@param {Number} type - Connector.TYPE_STRAIGHT or Connector.TYPE_JAGGED
      *@param {Point} startPoint - the start {Point}
      *@param {Point} endPoint - the end {Point}
@@ -1105,6 +1141,7 @@ ConnectorManager.prototype = {
      *@param {Number} y - the y coordinates of the point
      *@param {String} type - the type of connector to select. Can be 'connector'(ConnectionPoint.TYPE_CONNECTOR)
      *  or 'figure' (ConnectionPoint.TYPE_FIGURE)
+     *@return {Number} the Id of the {ConnectionPoint} or -1 if none found
      *@author Alex Gheorghiu <alex@scriptoid.com>
      */
     connectionPointGetByXY:function(x,y, type){
@@ -1338,6 +1375,8 @@ ConnectorManager.prototype = {
      **/
     connectionPointTransform:function(fId, matrix){
         var fCps = this.connectionPointGetAllByParent(fId);
+        var currentFigure = STACK.figureGetById(fId);
+
         //Log.info("ConnectionManager: connectionPointTransform()....1");
         //get all shape's connection points
         for(var i = 0 ; i < fCps.length; i++){
@@ -1345,28 +1384,116 @@ ConnectorManager.prototype = {
             fCps[i].transform(matrix);
             //Log.info("\tConnectionManager: connectionPointTransform()....2");
 
+            /* TODO: can we have more than one Glue for single ConnectionPoint? Do we need this cycle? */
             //get all glues for current connection point
             var glues = this.glueGetByFirstConnectionPointId(fCps[i].id);
             var gluesLength = glues.length;
             //Log.info("\tConnectionManager: connectionPointTransform()" + fCps[i].id + " glues = " + gluesLength);
             for(var j = 0; j < gluesLength; j++){
-                //get the ConnectionPoint from other side of the glue (from the connector)
-                var conCpId = glues[j].id2;
-                var conCp = this.connectionPointGetById(glues[j].id2);
+                
+                // get the ConnectionPoint from other side of current Glue (from the Connector)
+                var firstCP = this.connectionPointGetById(glues[j].id2);
+
+                // get the Connector - parent of firstCP ConnectionPoint
+                var connector = this.connectorGetById(firstCP.parentId);
+                
+                // get ConnectionPoints of the Connector
+                var cCPs = this.connectionPointGetAllByParent(connector.id);
+
+                /* In case of having connections where first or second ConnectionPoint glued automatically -
+                 * current ConnectionPoints can change it's position and maybe to another ConnectionPoints.
+                 * Variables used in finding solution of ConnectionPoints. we need to find
+                 * who is the start Figure, end Figure, starting Glue, ending Glue, etc*/
+                var startPoint = cCPs[0].point;
+                var endPoint = cCPs[1].point;
+                var startFigure;
+                var endFigure;
+                var startBounds;
+                var endBounds;
+                var automaticStart;
+                var automaticEnd;
+
+                // if current Figure is glued with startPoint of the Connector
+                if (firstCP.id == cCPs[0].id) {
+                    // ConnectionPoint connected with moved (transformed) Figure must be moved (transformed) as well
+                    cCPs[0].transform(matrix);
+                    
+                    // in this case current Figure is startFigure of the connection
+                    startFigure = currentFigure;
+
+                    // get Glue for second ConnectionPoint of the Connector
+                    var endGlue = this.glueGetBySecondConnectionPointId(cCPs[1].id)[0];
+                    
+                    // get Figure's ConnectionPoint which is glued with second ConnectionPoint of the Connector
+                    var endFigureCP = endGlue ? this.connectionPointGetById(endGlue.id1) : null;
+                    
+                    // get endFigure as parent of endFigureCP
+                    endFigure = endFigureCP ? STACK.figureGetById(endFigureCP.parentId) : null;
+
+                    // if startPoint has automatic Glue -> connection has automatic start
+                    automaticStart = glues[j].automatic;
+                    
+                    // if endPoint has Glue and it's automatic -> connection has automatic end
+                    automaticEnd = endGlue && endGlue.automatic;
+                } else {    // if current Figure is glued with endPoint of the Connector
+                    // ConnectionPoint connected with moved (transformed) Figure must be moved (transformed) as well
+                    cCPs[1].transform(matrix);
+                    
+                    // in this case current Figure is endFigure of the connection
+                    endFigure = currentFigure;
+
+                    // get Glue for first ConnectionPoint of the Connector
+                    var startGlue = this.glueGetBySecondConnectionPointId(cCPs[0].id)[0];
+                    
+                    // get Figure's ConnectionPoint which is glued with first ConnectionPoint of the Connector
+                    var startFigureCP = startGlue ? this.connectionPointGetById(startGlue.id1) : null;
+                    
+                    // get startFigure as parent of startFigureCP
+                    startFigure = startFigureCP ? STACK.figureGetById(startFigureCP.parentId) : null;
+
+                    // if startPoint has Glue and it's automatic -> connection has automatic start
+                    automaticStart = startGlue && startGlue.automatic;
+                    // if endPoint has automatic Glue -> connection has automatic end
+                    automaticEnd = glues[j].automatic;
+                }
+
+                startBounds = startFigure ? startFigure.getBounds(): null;
+                endBounds = endFigure ? endFigure.getBounds() : null;
+
+                //find best candidate for start and end point
+                var candidate = CONNECTOR_MANAGER.getClosestPointsOfConnection(
+                    automaticStart, //start automatic
+                    automaticEnd, //end automatic
+                    startFigure ? startFigure.id : -1, //start figure's id
+                    startPoint, //start point
+                    endFigure ? endFigure.id : -1, //end figure's id
+                    endPoint //end point
+                );
+
+                //solutions
+                DIAGRAMO.debugSolutions = CONNECTOR_MANAGER.connector2Points(connector.type, candidate[0], candidate[1], startBounds, endBounds);
+
+                // update position of Connector's ConnectionPoints and it's middle text
+                connector.turningPoints = Point.cloneArray(DIAGRAMO.debugSolutions[0][2]);
+                cCPs[0].point = connector.turningPoints[0].clone();
+                cCPs[1].point = connector.turningPoints[connector.turningPoints.length - 1].clone();
+                connector.updateMiddleText();
+
+
                 //Log.info("\t\tConnectionManager: connectionPointTransform() - connector's point " + conCp);
-                conCp.transform(matrix);
+//                firstCP.transform(matrix);
 
                 //get attached connector
 //                var con = this.connectorGetById(conCp.parentId);
 
                 //adjust attached Connector through the ConnectionPoint
 //                con.adjust(matrix, conCp.point.clone());
-                this.connectorAdjustByConnectionPoint(glues[j].id2 /*, x, y*/);
+//                this.connectorAdjustByConnectionPoint(glues[j].id2 /*, x, y*/);
             }
 
 
         }
-
+/*
         //get all shape's automatic glues
         var automaticGlues = this.glueGetByFigureId(fId);
         var automaticGluesLength = automaticGlues.length;
@@ -1381,6 +1508,7 @@ ConnectorManager.prototype = {
             //adjust attached Connector through the ConnectionPoint
             this.connectorAdjustByConnectionPoint(conCpId);
         }
+        */
 
         //Log.info("ConnectionManager: connectionPointTransform()...");
     },
@@ -1433,7 +1561,7 @@ ConnectorManager.prototype = {
         var currentGlue;
         for(var i=0; i<this.glues.length; i++){
             currentGlue = this.glues[i];
-            if(currentGlue.id1 == pointId && !currentGlue.automatic){
+            if(currentGlue.id1 == pointId){
                 collectedGlues.push(currentGlue);
             }
         }
@@ -1456,26 +1584,6 @@ ConnectorManager.prototype = {
         }
         return collectedGlues;
     },
-
-
-    /** Returns all {Glue}s that have automatic connection to target figureId
-     * means the first Id equals with a certain id value
-     *@param {Number} figureId - {Figure}'s id
-     *@return {Array}{Glue}s
-     *@author Artyom Pokatilov <artyom.pokatilov@gmail.com>
-     */
-    glueGetByFigureId:function(figureId){
-        var collectedGlues = [];
-        var currentGlue;
-        for(var i=0; i<this.glues.length; i++){
-            currentGlue = this.glues[i];
-            if(currentGlue.id1 == figureId && currentGlue.automatic){
-                collectedGlues.push(currentGlue);
-            }
-        }
-        return collectedGlues;
-    },
-
 
 
     /**Creates a new {Glue} and store it into the glue database. Use this instead
