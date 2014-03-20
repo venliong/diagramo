@@ -245,9 +245,15 @@ Connector.prototype = {
     
     /**Paints the connector
      *@param {Context} context - the 2D context of the canvas
-     *@author Alex, Zack
+     *@author Alex, Zack, Artyom
      **/
     paint:function(context){
+        //Do the start and end point match?
+        if (this.areStartEndPointsMatch()) {
+            // then not paint Connector at all
+            return;
+        }
+
         context.save();
         
         this.style.setupContext(context);
@@ -964,6 +970,15 @@ Connector.prototype = {
             }
         }
     },
+
+
+    /**Check if start and end members of turningPoints match/are the same.
+     *@return {Boolean} - match or not
+     *@author Artyom Pokatilov <artyom.pokatilov@gmail.com>
+     **/
+    areStartEndPointsMatch: function() {
+        return this.turningPoints[0].equals(this.turningPoints[this.turningPoints.length - 1]);
+    },
     
 
     /**
@@ -1122,7 +1137,6 @@ Connector.prototype = {
         }
         return [minX, minY, maxX, maxY];
     },
-    
     
     /**String representation*/
     toString:function(){
@@ -1528,6 +1542,11 @@ Glue.prototype = {
      *@return {String} - the representation
      **/
     toString:function(){
-        return 'Glue : (' + this.id1 + ', ' + this.id2 + ', ' + this.automatic + ')';
+        return 'Glue : (id1 = ' + this.id1
+            + ', id2 = ' + this.id2
+            + ', type1 = ' + this.type1
+            + ', type2 = ' + this.type2
+            + ', automatic = ' + this.automatic
+            + ')';
     }
 }
