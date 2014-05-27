@@ -23,6 +23,9 @@ var DIAGRAMO = {
     * TODO: in further can be used for option like "Show Cloud" or "Highlight about to connect points" */
     visualMagnet : true,
 
+    /** enables/disables rendering fill color as gradient*/
+    gradientFill : true,
+
     /**On canvas fit action this will be the distance between canvas work area and it's border*/
     CANVAS_FIT_PADDING : 10
 };
@@ -101,6 +104,9 @@ var GRIDWIDTH = 30;
 
 /**The distance (from a snap line) that will trigger a snap*/
 var SNAP_DISTANCE = 5;
+
+/**The half of light distance between upper and lower border for gradient filling*/
+var gradientLightStep = 0.06;
 
 var fillColor=null;
 var strokeColor='#000000';
@@ -251,6 +257,7 @@ selectionArea.points.push(new Point(0,0));
 selectionArea.points.push(new Point(0,0));
 selectionArea.points.push(new Point(0,0));
 selectionArea.style.strokeStyle = 'grey';
+selectionArea.style.gradientBounds = [];
 selectionArea.style.lineWidth = '1';
 
 /**Toggle grid visible or not*/
@@ -264,6 +271,9 @@ var lastClick = [];
 
 /**Default line width*/
 var defaultLineWidth = 2;
+
+/**Default handle line width*/
+var defaultThinLineWidth = 1;
 
 /**Current instance of TextEditorPopup*/
 var currentTextEditor = null;
