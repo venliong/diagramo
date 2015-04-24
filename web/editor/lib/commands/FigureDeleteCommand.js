@@ -61,6 +61,12 @@ FigureDeleteCommand.prototype = {
                     this.deletedGlues.push(glues[0]);
                 }
             }
+            
+            //delete it from any container
+            var containerId = CONTAINER_MANAGER.getContainerForFigure(this.figureId);
+            if (containerId != -1){
+                CONTAINER_MANAGER.removeFigure(containerId,this.figureId);
+            }
 
             //delete it
             STACK.figureRemoveById(this.figureId);
